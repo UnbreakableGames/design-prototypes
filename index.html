@@ -547,10 +547,10 @@ const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 // Enemy config per tier zone (only Tier 4+ spawn enemies)
 const ENEMY_CONFIG = [
   null, null, null, // T1-T3: no enemies
-  { hp: 20, damage: 3, speed: 40, attackRange: 50, attackRate: 1.5, color: '#50c878', size: 6, xp: 0 },   // T4 - Emeralite zone
-  { hp: 35, damage: 5, speed: 50, attackRange: 55, attackRate: 1.2, color: '#ffd700', size: 7, xp: 0 },   // T5 - Aurium zone
-  { hp: 60, damage: 8, speed: 55, attackRange: 60, attackRate: 1.0, color: '#9b59b6', size: 8, xp: 0 },   // T6 - Voidstone zone
-  { hp: 100, damage: 12, speed: 60, attackRange: 65, attackRate: 0.8, color: '#dc143c', size: 9, xp: 0 }, // T7 - Cosmium zone
+  { hp: 20, damage: 3, speed: 40, attackRange: 18, attackRate: 1.5, color: '#50c878', size: 6, xp: 0 },   // T4 - Emeralite zone
+  { hp: 35, damage: 5, speed: 50, attackRange: 20, attackRate: 1.2, color: '#ffd700', size: 7, xp: 0 },   // T5 - Aurium zone
+  { hp: 60, damage: 8, speed: 55, attackRange: 22, attackRate: 1.0, color: '#9b59b6', size: 8, xp: 0 },   // T6 - Voidstone zone
+  { hp: 100, damage: 12, speed: 60, attackRange: 24, attackRate: 0.8, color: '#dc143c', size: 9, xp: 0 }, // T7 - Cosmium zone
 ];
 const ENEMY_SPAWN_INTERVAL = 4; // seconds between spawn checks
 const ENEMIES_PER_RING = [0, 0, 0, 2, 2, 2, 2]; // max active enemies per ring
@@ -1568,9 +1568,11 @@ function tickEnemies(dt) {
     const leashDist = 35;
     const tooFarFromRing = Math.abs(distFromCenter - ringR) > leashDist;
 
-    // Small aggro range — only notice player when very close
+    // Small aggro range — only notice player when very close, or if hit
     const aggroRange = 60;
-    const chasing = !playerDead && distToPlayer < aggroRange && !tooFarFromRing;
+    const aggroActive = e.aggro && distToPlayer < 120; // stay aggro in wider range once provoked
+    const chasing = !playerDead && (distToPlayer < aggroRange || aggroActive) && !tooFarFromRing;
+    if (!chasing) e.aggro = false; // drop aggro when returning to patrol
 
     if (chasing) {
       // Chase player but stay near ring
@@ -1632,7 +1634,7 @@ function tickPlayerCombat(dt) {
   if (playerFireTimer >= fireInterval) {
     // Find nearest enemy in range
     let nearest = null;
-    let nearestDist = 200; // max shooting range
+    let nearestDist = 80; // max shooting range
     for (const e of enemies) {
       const d = Math.hypot(e.x - playerX, e.y - playerY);
       if (d < nearestDist) {
@@ -1679,6 +1681,7 @@ function tickProjectiles(dt) {
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if (d < e.size + 3) {
         e.hp -= p.damage;
+        e.aggro = true; // being attacked triggers aggro
         addParticles(p.x, p.y, ENEMY_CONFIG[e.tier].color, 3);
         addFloatingText(e.x, e.y - e.size - 5, `-${p.damage}`, '#44ff44');
         projectiles.splice(i, 1);
