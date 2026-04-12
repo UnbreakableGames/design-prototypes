@@ -145,6 +145,12 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
         <h3>Refiners</h3>
         <div id="refiners"></div>
         <button class="btn-deposit" id="btn-deposit" onclick="depositOre()" disabled>Deposit Ore</button>
+        <div id="drone-refiners-wrap" style="display:none">
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#4a9eff;margin-bottom:4px">🤖 Drone Refiners</div>
+          </div>
+          <div id="drone-refiners"></div>
+        </div>
       </div>
       <div class="panel">
         <h3>Status</h3>
@@ -735,6 +741,7 @@ function defaultState() {
       ambient: new Array(7).fill(false),
     },
     refiners: [{ ore: null, progress: 0, barsReady: 0, barsProduced: 0 }],
+    droneRefiners: [],
     carrying: [],
     hp: 50,
     timePlayed: 0,
@@ -1215,15 +1222,15 @@ function depositOre() {
   }
 }
 
-function collectBar(index) {
-  const refiner = state.refiners[index];
+function collectFromRefiner(refiner, isDrone) {
   if (!refiner || !refiner.ore || refiner.barsReady <= 0) return;
   const key = refiner.ore;
   const tierIdx = TIER_KEYS.indexOf(key);
   const count = refiner.barsReady;
   state.bars[key] = (state.bars[key] || 0) + count;
   refiner.barsReady = 0;
-  addLog(`+${count} ${TIER_NAMES[tierIdx]} Bar${count > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
+  const prefix = isDrone ? '🤖 ' : '';
+  addLog(`${prefix}+${count} ${TIER_NAMES[tierIdx]} Bar${count > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
   // If ore is fully depleted, clear the refiner
   if (refiner.barsProduced >= TIER_YIELD[tierIdx]) {
     refiner.ore = null;
@@ -1231,6 +1238,14 @@ function collectBar(index) {
     refiner.barsProduced = 0;
     createRefinerElements();
   }
+}
+
+function collectBar(index) {
+  collectFromRefiner(state.refiners[index], false);
+}
+
+function collectDroneBar(index) {
+  collectFromRefiner(state.droneRefiners[index], true);
 }
 
 function takeDamage(amount) {
@@ -1355,8 +1370,9 @@ function gameLoop() {
 
   state.timePlayed += dt;
 
-  // Tick refiners
-  for (const ref of state.refiners) {
+  // Tick refiners (player + drone)
+  const allRefiners = state.refiners.concat(state.droneRefiners);
+  for (const ref of allRefiners) {
     if (ref.ore) {
       const tierIdx = TIER_KEYS.indexOf(ref.ore);
       const totalYield = TIER_YIELD[tierIdx];
@@ -1387,26 +1403,29 @@ function gameLoop() {
     if (a.flashTimer > 0) a.flashTimer -= dt;
   }
 
-  // Tick drones
+  // Tick drones — each drone has its own dedicated refiner
   if (getDroneCount() > 0) {
+    // Ensure drone refiners exist
+    while (state.droneRefiners.length < getDroneCount()) {
+      state.droneRefiners.push({ ore: null, progress: 0, barsReady: 0, barsProduced: 0 });
+    }
     droneTimer += dt;
     if (droneTimer >= 5) {
       droneTimer -= 5;
       const maxT = getDroneMaxTier();
-      let dronesLeft = getDroneCount();
-      for (let d = 0; d < dronesLeft; d++) {
-        const ref = state.refiners.find(r => !r.ore);
-        if (!ref) break;
+      for (let d = 0; d < getDroneCount(); d++) {
+        const ref = state.droneRefiners[d];
+        if (ref.ore) continue; // this drone's refiner is still busy
         const tier = Math.min(maxT, 3) - 1; // 0-indexed, max tier 3
         ref.ore = TIER_KEYS[tier];
         ref.progress = 0; ref.barsReady = 0; ref.barsProduced = 0;
-        addLog(`Drone mined ${TIER_NAMES[tier]} ore`, var_dim);
+        addLog(`🤖 Drone ${d + 1} mined ${TIER_NAMES[tier]} ore`, '#4a9eff');
       }
       createRefinerElements();
     }
   }
 
-  // Tick auto-collector
+  // Tick auto-collector (player refiners + drone refiners)
   const acInterval = getAutoCollectInterval();
   if (acInterval > 0) {
     autoCollectTimer += dt;
@@ -1415,6 +1434,11 @@ function gameLoop() {
       for (let i = 0; i < state.refiners.length; i++) {
         if (state.refiners[i].ore && state.refiners[i].barsReady > 0) {
           collectBar(i);
+        }
+      }
+      for (let i = 0; i < state.droneRefiners.length; i++) {
+        if (state.droneRefiners[i].ore && state.droneRefiners[i].barsReady > 0) {
+          collectDroneBar(i);
         }
       }
     }
@@ -1540,52 +1564,82 @@ function createRefinerElements() {
       </div>
     </div>`;
   }).join('');
+
+  // Drone refiners — one per drone
+  const droneCount = getDroneCount();
+  const wrap = document.getElementById('drone-refiners-wrap');
+  wrap.style.display = droneCount > 0 ? 'block' : 'none';
+  while (state.droneRefiners.length < droneCount) {
+    state.droneRefiners.push({ ore: null, progress: 0, barsReady: 0, barsProduced: 0 });
+  }
+  // Trim if drone count decreased (shouldn't normally happen)
+  if (state.droneRefiners.length > droneCount) state.droneRefiners.length = droneCount;
+
+  const del = document.getElementById('drone-refiners');
+  del.innerHTML = state.droneRefiners.map((ref, i) => {
+    return `<div class="refiner" id="drefiner-${i}">
+      <div class="refiner-header">
+        <span class="refiner-label" style="color:#4a9eff">Drone ${i + 1}</span>
+        <span class="refiner-info" id="dref-info-${i}"></span>
+      </div>
+      <div class="refiner-row">
+        <div class="refiner-track"><div class="refiner-fill" id="dref-fill-${i}"></div></div>
+        <span id="dref-btn-${i}"></span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderRefinerRow(ref, fillId, infoId, btnId, collectFn) {
+  const fill = document.getElementById(fillId);
+  const info = document.getElementById(infoId);
+  const btn = document.getElementById(btnId);
+  if (!fill || !info || !btn) return;
+
+  if (!ref.ore) {
+    fill.style.width = '0%';
+    fill.style.background = '#333';
+    if (info.dataset.state !== 'empty') {
+      info.innerHTML = '<span style="color:var(--dim)">Empty</span>';
+      info.dataset.state = 'empty';
+    }
+    if (btn.innerHTML !== '') btn.innerHTML = '';
+  } else {
+    const tierIdx = TIER_KEYS.indexOf(ref.ore);
+    const totalYield = TIER_YIELD[tierIdx];
+    const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
+    const depleted = ref.barsProduced >= totalYield;
+    const pct = depleted ? 100 : Math.min(100, (ref.progress / interval) * 100);
+    fill.style.width = `${pct}%`;
+    fill.style.background = TIER_COLORS[tierIdx];
+
+    const remaining = (!depleted && ref.barsReady === 0) ? Math.ceil(interval - ref.progress) : -1;
+    const infoKey = `${ref.ore}-${ref.barsProduced}-${remaining}`;
+    if (info.dataset.state !== infoKey) {
+      let infoHtml = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
+      if (remaining >= 0) {
+        infoHtml += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
+      }
+      info.innerHTML = infoHtml;
+      info.dataset.state = infoKey;
+    }
+
+    const btnKey = ref.barsReady > 0 ? `collect-${ref.barsReady}` : '';
+    if (btn.dataset.state !== btnKey) {
+      btn.innerHTML = ref.barsReady > 0
+        ? `<button class="refiner-collect" onclick="${collectFn}">Collect ${ref.barsReady}</button>`
+        : '';
+      btn.dataset.state = btnKey;
+    }
+  }
 }
 
 function renderRefiners() {
   for (let i = 0; i < state.refiners.length; i++) {
-    const ref = state.refiners[i];
-    const fill = document.getElementById(`ref-fill-${i}`);
-    const info = document.getElementById(`ref-info-${i}`);
-    const btn = document.getElementById(`ref-btn-${i}`);
-    if (!fill || !info || !btn) continue;
-
-    if (!ref.ore) {
-      fill.style.width = '0%';
-      fill.style.background = '#333';
-      if (info.dataset.state !== 'empty') {
-        info.innerHTML = '<span style="color:var(--dim)">Empty</span>';
-        info.dataset.state = 'empty';
-      }
-      if (btn.innerHTML !== '') btn.innerHTML = '';
-    } else {
-      const tierIdx = TIER_KEYS.indexOf(ref.ore);
-      const totalYield = TIER_YIELD[tierIdx];
-      const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
-      const depleted = ref.barsProduced >= totalYield;
-      const pct = depleted ? 100 : Math.min(100, (ref.progress / interval) * 100);
-      fill.style.width = `${pct}%`;
-      fill.style.background = TIER_COLORS[tierIdx];
-
-      const remaining = (!depleted && ref.barsReady === 0) ? Math.ceil(interval - ref.progress) : -1;
-      const infoKey = `${ref.ore}-${ref.barsProduced}-${remaining}`;
-      if (info.dataset.state !== infoKey) {
-        let infoHtml = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
-        if (remaining >= 0) {
-          infoHtml += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
-        }
-        info.innerHTML = infoHtml;
-        info.dataset.state = infoKey;
-      }
-
-      const btnKey = ref.barsReady > 0 ? `collect-${ref.barsReady}` : '';
-      if (btn.dataset.state !== btnKey) {
-        btn.innerHTML = ref.barsReady > 0
-          ? `<button class="refiner-collect" onclick="collectBar(${i})">Collect ${ref.barsReady}</button>`
-          : '';
-        btn.dataset.state = btnKey;
-      }
-    }
+    renderRefinerRow(state.refiners[i], `ref-fill-${i}`, `ref-info-${i}`, `ref-btn-${i}`, `collectBar(${i})`);
+  }
+  for (let i = 0; i < state.droneRefiners.length; i++) {
+    renderRefinerRow(state.droneRefiners[i], `dref-fill-${i}`, `dref-info-${i}`, `dref-btn-${i}`, `collectDroneBar(${i})`);
   }
 }
 
@@ -1826,17 +1880,23 @@ function processOffline() {
     }
   }
 
-  // Drone production during offline
+  // Drone production during offline — each drone uses its own refiner
   if (getDroneCount() > 0 && offlineSec > 5) {
+    // Ensure drone refiners exist
+    while (state.droneRefiners.length < getDroneCount()) {
+      state.droneRefiners.push({ ore: null, progress: 0, barsReady: 0, barsProduced: 0 });
+    }
     const cycles = Math.floor(offlineSec / 5);
     const maxT = getDroneMaxTier();
     let produced = 0;
     for (let c = 0; c < cycles && c < 100; c++) {
       for (let d = 0; d < getDroneCount(); d++) {
+        const ref = state.droneRefiners[d];
+        if (ref.ore) continue; // refiner still busy, skip this cycle for this drone
         const tierIdx = Math.min(maxT, 3) - 1;
         const tierKey = TIER_KEYS[tierIdx];
         const yield_ = TIER_YIELD[tierIdx];
-        // Auto-collect offline drone output as bars directly
+        // Offline: auto-produce and collect bars directly
         state.bars[tierKey] = (state.bars[tierKey] || 0) + yield_;
         produced += yield_;
       }
