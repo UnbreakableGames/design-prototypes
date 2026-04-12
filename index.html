@@ -1482,6 +1482,9 @@ function renderUI() {
   // Refiners
   renderRefiners();
 
+  // Upgrades (keep buy buttons in sync with bar counts)
+  renderUpgradeTab();
+
   // Drone/auto-collect status
   const dc = getDroneCount();
   document.getElementById('drone-status').textContent = dc > 0
