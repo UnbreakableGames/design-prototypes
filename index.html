@@ -517,8 +517,8 @@ const TIER_KEYS = ['iron','copper','cobalt','emeralite','aurium','voidstone','co
 const TIER_NAMES = ['Iron','Copper','Cobalt','Emeralite','Aurium','Voidstone','Cosmium'];
 const TIER_COLORS = ['#8a8a8a','#b87333','#4169e1','#50c878','#ffd700','#9b59b6','#dc143c'];
 const TIER_HITS = [3, 5, 8, 12, 18, 25, 35];
-const TIER_REFINE_TIME = [10, 20, 35, 60, 90, 120, 180];
-const TIER_YIELD = [10, 1, 1, 1, 1, 1, 1];
+const TIER_BAR_INTERVAL = [3, 20, 35, 60, 90, 120, 180]; // seconds per bar
+const TIER_YIELD = [10, 1, 1, 1, 1, 1, 1]; // bars per ore
 const TIER_DANGER = [0, 0, 0, 0.25, 0.35, 0.45, 0.55];
 const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 
@@ -718,7 +718,7 @@ function defaultState() {
       exterior: new Array(10).fill(false),
       ambient: new Array(7).fill(false),
     },
-    refiners: [{ ore: null, progress: 0 }],
+    refiners: [{ ore: null, progress: 0, barsReady: 0, barsProduced: 0 }],
     carrying: [],
     hp: 50,
     timePlayed: 0,
@@ -1155,7 +1155,7 @@ function autoPickupAndDeposit(asteroid) {
   const refiner = state.refiners.find(r => !r.ore);
   if (refiner) {
     refiner.ore = TIER_KEYS[asteroid.tier];
-    refiner.progress = 0;
+    refiner.progress = 0; refiner.barsReady = 0; refiner.barsProduced = 0;
     asteroid.hasOre = false;
     addLog(`Auto-deposited ${TIER_NAMES[asteroid.tier]} ore`, '#4a9eff');
     createRefinerElements();
@@ -1183,7 +1183,7 @@ function depositOre() {
     if (!refiner) break;
     const ore = state.carrying.shift();
     refiner.ore = ore;
-    refiner.progress = 0;
+    refiner.progress = 0; refiner.barsReady = 0; refiner.barsProduced = 0;
     deposited++;
   }
   if (deposited > 0) {
@@ -1201,17 +1201,20 @@ function depositOre() {
 
 function collectBar(index) {
   const refiner = state.refiners[index];
-  if (!refiner || !refiner.ore) return;
-  const refineTime = TIER_REFINE_TIME[TIER_KEYS.indexOf(refiner.ore)] / getRefinerSpeedMult();
-  if (refiner.progress < refineTime) return;
+  if (!refiner || !refiner.ore || refiner.barsReady <= 0) return;
   const key = refiner.ore;
   const tierIdx = TIER_KEYS.indexOf(key);
-  const yield_ = TIER_YIELD[tierIdx];
-  state.bars[key] = (state.bars[key] || 0) + yield_;
-  addLog(`+${yield_} ${TIER_NAMES[tierIdx]} Bar${yield_ > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
-  refiner.ore = null;
-  refiner.progress = 0;
-  createRefinerElements();
+  const count = refiner.barsReady;
+  state.bars[key] = (state.bars[key] || 0) + count;
+  refiner.barsReady = 0;
+  addLog(`+${count} ${TIER_NAMES[tierIdx]} Bar${count > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
+  // If ore is fully depleted, clear the refiner
+  if (refiner.barsProduced >= TIER_YIELD[tierIdx]) {
+    refiner.ore = null;
+    refiner.progress = 0;
+    refiner.barsProduced = 0;
+    createRefinerElements();
+  }
 }
 
 function takeDamage(amount) {
@@ -1271,7 +1274,7 @@ function purchaseUpgrade(category, level, subIdx) {
     if (!canAfford(cost)) return;
     deductCost(cost);
     state.upgrades.refinerCount = nextLevel;
-    state.refiners.push({ ore: null, progress: 0 });
+    state.refiners.push({ ore: null, progress: 0, barsReady: 0, barsProduced: 0 });
     addLog(`Built Refiner #${getRefinerCount()}`, '#4a9eff');
     createRefinerElements();
     renderUpgradeTab();
@@ -1339,7 +1342,19 @@ function gameLoop() {
   // Tick refiners
   for (const ref of state.refiners) {
     if (ref.ore) {
-      ref.progress += dt * getRefinerSpeedMult();
+      const tierIdx = TIER_KEYS.indexOf(ref.ore);
+      const totalYield = TIER_YIELD[tierIdx];
+      if (ref.barsProduced < totalYield) {
+        const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
+        ref.progress += dt;
+        while (ref.progress >= interval && ref.barsProduced < totalYield) {
+          ref.progress -= interval;
+          ref.barsReady++;
+          ref.barsProduced++;
+        }
+        // Clamp progress if fully produced
+        if (ref.barsProduced >= totalYield) ref.progress = 0;
+      }
     }
   }
 
@@ -1368,7 +1383,7 @@ function gameLoop() {
         if (!ref) break;
         const tier = Math.min(maxT, 3) - 1; // 0-indexed, max tier 3
         ref.ore = TIER_KEYS[tier];
-        ref.progress = 0;
+        ref.progress = 0; ref.barsReady = 0; ref.barsProduced = 0;
         addLog(`Drone mined ${TIER_NAMES[tier]} ore`, var_dim);
       }
       createRefinerElements();
@@ -1382,12 +1397,8 @@ function gameLoop() {
     if (autoCollectTimer >= acInterval) {
       autoCollectTimer -= acInterval;
       for (let i = 0; i < state.refiners.length; i++) {
-        const ref = state.refiners[i];
-        if (ref.ore) {
-          const refineTime = TIER_REFINE_TIME[TIER_KEYS.indexOf(ref.ore)] / getRefinerSpeedMult();
-          if (ref.progress >= refineTime) {
-            collectBar(i);
-          }
+        if (state.refiners[i].ore && state.refiners[i].barsReady > 0) {
+          collectBar(i);
         }
       }
     }
@@ -1493,7 +1504,7 @@ function renderInventory() {
 function createRefinerElements() {
   // Ensure state.refiners has right count
   while (state.refiners.length < getRefinerCount()) {
-    state.refiners.push({ ore: null, progress: 0 });
+    state.refiners.push({ ore: null, progress: 0, barsReady: 0, barsProduced: 0 });
   }
 
   const el = document.getElementById('refiners');
@@ -1519,18 +1530,22 @@ function renderRefiners() {
       status.innerHTML = '<span style="color:var(--dim)">Empty</span>';
     } else {
       const tierIdx = TIER_KEYS.indexOf(ref.ore);
-      const refineTime = TIER_REFINE_TIME[tierIdx] / getRefinerSpeedMult();
-      const pct = Math.min(100, (ref.progress / refineTime) * 100);
+      const totalYield = TIER_YIELD[tierIdx];
+      const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
+      const depleted = ref.barsProduced >= totalYield;
+      // Progress bar shows progress toward next bar
+      const pct = depleted ? 100 : Math.min(100, (ref.progress / interval) * 100);
       fill.style.width = `${pct}%`;
       fill.style.background = TIER_COLORS[tierIdx];
 
-      if (ref.progress >= refineTime) {
-        const y = TIER_YIELD[tierIdx];
-        status.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">${y > 1 ? y + ' ' : ''}${TIER_NAMES[tierIdx]} Bar${y > 1 ? 's' : ''} - Collect!</button>`;
-      } else {
-        const remaining = Math.ceil(refineTime - ref.progress);
-        status.innerHTML = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} - ${remaining}s</span>`;
+      let html = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
+      if (ref.barsReady > 0) {
+        html += ` <button class="refiner-collect" onclick="collectBar(${i})">${ref.barsReady} Bar${ref.barsReady > 1 ? 's' : ''} - Collect!</button>`;
+      } else if (!depleted) {
+        const remaining = Math.ceil(interval - ref.progress);
+        html += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
       }
+      status.innerHTML = html;
     }
   }
 }
@@ -1738,7 +1753,22 @@ function processOffline() {
   // Advance refiners by offline time
   for (const ref of state.refiners) {
     if (ref.ore) {
-      ref.progress += offlineSec * getRefinerSpeedMult();
+      const tierIdx = TIER_KEYS.indexOf(ref.ore);
+      const totalYield = TIER_YIELD[tierIdx];
+      const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
+      let timeLeft = offlineSec;
+      while (timeLeft > 0 && ref.barsProduced < totalYield) {
+        const toNext = interval - ref.progress;
+        if (timeLeft >= toNext) {
+          timeLeft -= toNext;
+          ref.progress = 0;
+          ref.barsReady++;
+          ref.barsProduced++;
+        } else {
+          ref.progress += timeLeft;
+          timeLeft = 0;
+        }
+      }
     }
   }
 
