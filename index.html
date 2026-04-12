@@ -1538,8 +1538,11 @@ function renderRefiners() {
     if (!ref.ore) {
       fill.style.width = '0%';
       fill.style.background = '#333';
-      info.innerHTML = '<span style="color:var(--dim)">Empty</span>';
-      btn.innerHTML = '';
+      if (info.dataset.state !== 'empty') {
+        info.innerHTML = '<span style="color:var(--dim)">Empty</span>';
+        info.dataset.state = 'empty';
+      }
+      if (btn.innerHTML !== '') btn.innerHTML = '';
     } else {
       const tierIdx = TIER_KEYS.indexOf(ref.ore);
       const totalYield = TIER_YIELD[tierIdx];
@@ -1549,17 +1552,23 @@ function renderRefiners() {
       fill.style.width = `${pct}%`;
       fill.style.background = TIER_COLORS[tierIdx];
 
-      let infoHtml = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
-      if (!depleted && ref.barsReady === 0) {
-        const remaining = Math.ceil(interval - ref.progress);
-        infoHtml += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
+      const remaining = (!depleted && ref.barsReady === 0) ? Math.ceil(interval - ref.progress) : -1;
+      const infoKey = `${ref.ore}-${ref.barsProduced}-${remaining}`;
+      if (info.dataset.state !== infoKey) {
+        let infoHtml = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
+        if (remaining >= 0) {
+          infoHtml += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
+        }
+        info.innerHTML = infoHtml;
+        info.dataset.state = infoKey;
       }
-      info.innerHTML = infoHtml;
 
-      if (ref.barsReady > 0) {
-        btn.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">Collect ${ref.barsReady}</button>`;
-      } else {
-        btn.innerHTML = '';
+      const btnKey = ref.barsReady > 0 ? `collect-${ref.barsReady}` : '';
+      if (btn.dataset.state !== btnKey) {
+        btn.innerHTML = ref.barsReady > 0
+          ? `<button class="refiner-collect" onclick="collectBar(${i})">Collect ${ref.barsReady}</button>`
+          : '';
+        btn.dataset.state = btnKey;
       }
     }
   }
@@ -1598,14 +1607,21 @@ function switchTab(tabId) {
 
 function renderUpgradeTab() {
   const el = document.getElementById('upgrade-content');
+  const newHtml = buildUpgradeTabHtml();
+  if (el.dataset.hash !== newHtml.length + '') {
+    el.innerHTML = newHtml;
+    el.dataset.hash = newHtml.length + '';
+  }
+}
 
+function buildUpgradeTabHtml() {
   if (activeTab === 'mining') {
-    el.innerHTML = renderLinearUpgrade('pick', 'Mining Pick', UPGRADES.pick, lvl => `${UPGRADES.pick[lvl].name} (${UPGRADES.pick[lvl].damage} dmg, Tier 1-${UPGRADES.pick[lvl].maxTier})`)
+    return renderLinearUpgrade('pick', 'Mining Pick', UPGRADES.pick, lvl => `${UPGRADES.pick[lvl].name} (${UPGRADES.pick[lvl].damage} dmg, Tier 1-${UPGRADES.pick[lvl].maxTier})`)
       + renderLinearUpgrade('speed', 'Movement Speed', UPGRADES.speed, lvl => UPGRADES.speed[lvl].boost === 0 ? 'Base speed' : `+${UPGRADES.speed[lvl].boost}% speed`)
       + renderLinearUpgrade('capacity', 'Ore Capacity', UPGRADES.capacity, lvl => `Carry ${UPGRADES.capacity[lvl].capacity} ore`);
   }
-  else if (activeTab === 'buildings') {
-    el.innerHTML = renderLinearUpgrade('landingPad', 'Landing Pad', UPGRADES.landingPad, lvl => UPGRADES.landingPad[lvl].effect)
+  if (activeTab === 'buildings') {
+    return renderLinearUpgrade('landingPad', 'Landing Pad', UPGRADES.landingPad, lvl => UPGRADES.landingPad[lvl].effect)
       + renderRefinerUpgrade()
       + renderLinearUpgrade('refinerSpeed', 'Refiner Speed', UPGRADES.refinerSpeed, lvl => `${UPGRADES.refinerSpeed[lvl].mult}x speed`)
       + renderLinearUpgrade('thrusterDock', 'Thruster Dock', UPGRADES.thrusterDock, lvl => UPGRADES.thrusterDock[lvl].effect)
@@ -1613,25 +1629,25 @@ function renderUpgradeTab() {
       + renderLinearUpgrade('droneBay', 'Drone Bay', UPGRADES.droneBay, lvl => { const d = UPGRADES.droneBay[lvl]; return d.drones === 0 ? 'Not built' : `${d.drones} drones (Tier 1-${d.maxTier})`; })
       + renderLinearUpgrade('autoCollector', 'Auto-Collector', UPGRADES.autoCollector, lvl => { const a = UPGRADES.autoCollector[lvl]; return a.interval === 0 ? 'Off' : `Every ${a.interval}s`; });
   }
-  else if (activeTab === 'combat') {
+  if (activeTab === 'combat') {
     if (!state.upgrades.armory) {
-      el.innerHTML = '<div class="upgrade-card"><div class="upgrade-name" style="color:var(--danger)">Armory Required</div><div class="upgrade-effect">Build the Armory in the Buildings tab to unlock combat upgrades.</div></div>';
-    } else {
-      el.innerHTML = renderLinearUpgrade('weaponDmg', 'Weapon Damage', UPGRADES.weaponDmg, lvl => `${UPGRADES.weaponDmg[lvl].damage} damage`)
-        + renderLinearUpgrade('fireRate', 'Fire Rate', UPGRADES.fireRate, lvl => `${UPGRADES.fireRate[lvl].rate} shots/sec`)
-        + renderLinearUpgrade('health', 'Max Health', UPGRADES.health, lvl => `${UPGRADES.health[lvl].hp} HP`)
-        + renderLinearUpgrade('shield', 'Shield', UPGRADES.shield, lvl => `${UPGRADES.shield[lvl].shield} shield`)
-        + renderLinearUpgrade('shieldRegen', 'Shield Regen', UPGRADES.shieldRegen, lvl => `${UPGRADES.shieldRegen[lvl].delay}s regen delay`);
+      return '<div class="upgrade-card"><div class="upgrade-name" style="color:var(--danger)">Armory Required</div><div class="upgrade-effect">Build the Armory in the Buildings tab to unlock combat upgrades.</div></div>';
     }
+    return renderLinearUpgrade('weaponDmg', 'Weapon Damage', UPGRADES.weaponDmg, lvl => `${UPGRADES.weaponDmg[lvl].damage} damage`)
+      + renderLinearUpgrade('fireRate', 'Fire Rate', UPGRADES.fireRate, lvl => `${UPGRADES.fireRate[lvl].rate} shots/sec`)
+      + renderLinearUpgrade('health', 'Max Health', UPGRADES.health, lvl => `${UPGRADES.health[lvl].hp} HP`)
+      + renderLinearUpgrade('shield', 'Shield', UPGRADES.shield, lvl => `${UPGRADES.shield[lvl].shield} shield`)
+      + renderLinearUpgrade('shieldRegen', 'Shield Regen', UPGRADES.shieldRegen, lvl => `${UPGRADES.shieldRegen[lvl].delay}s regen delay`);
   }
-  else if (activeTab === 'cosmetics') {
-    el.innerHTML = renderCosmeticCategory('flooring', 'Flooring')
+  if (activeTab === 'cosmetics') {
+    return renderCosmeticCategory('flooring', 'Flooring')
       + renderCosmeticCategory('walls', 'Walls / Railings')
       + renderCosmeticCategory('lighting', 'Lighting')
       + renderCosmeticCategory('furniture', 'Furniture')
       + renderCosmeticCategory('exterior', 'Exterior')
       + renderCosmeticCategory('ambient', 'Ambient Effects');
   }
+  return '';
 }
 
 function renderLinearUpgrade(key, name, arr, effectFn) {
