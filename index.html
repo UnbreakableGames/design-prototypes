@@ -144,7 +144,7 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
       <div class="panel">
         <h3>Refiners</h3>
         <div id="refiners"></div>
-        <button class="btn-deposit" id="btn-deposit" onclick="depositOre()" disabled>Deposit Ore</button>
+        <button class="btn-deposit" id="btn-deposit" onclick="setPlayerTarget(CX, CY, 'deposit', null)" disabled>Deposit Ore</button>
         <div id="drone-refiners-wrap" style="display:none">
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#4a9eff;margin-bottom:4px">🤖 Drone Refiners</div>
@@ -544,6 +544,17 @@ const TIER_YIELD = [5, 8, 6, 5, 4, 3, 2]; // bars per ore
 const TIER_DANGER = [0, 0, 0, 0.25, 0.35, 0.45, 0.55];
 const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 
+// Enemy config per tier zone (only Tier 4+ spawn enemies)
+const ENEMY_CONFIG = [
+  null, null, null, // T1-T3: no enemies
+  { hp: 20, damage: 3, speed: 40, attackRange: 50, attackRate: 1.5, color: '#50c878', size: 6, xp: 0 },   // T4 - Emeralite zone
+  { hp: 35, damage: 5, speed: 50, attackRange: 55, attackRate: 1.2, color: '#ffd700', size: 7, xp: 0 },   // T5 - Aurium zone
+  { hp: 60, damage: 8, speed: 55, attackRange: 60, attackRate: 1.0, color: '#9b59b6', size: 8, xp: 0 },   // T6 - Voidstone zone
+  { hp: 100, damage: 12, speed: 60, attackRange: 65, attackRate: 0.8, color: '#dc143c', size: 9, xp: 0 }, // T7 - Cosmium zone
+];
+const ENEMY_SPAWN_INTERVAL = 4; // seconds between spawn checks
+const ENEMIES_PER_RING = [0, 0, 0, 2, 2, 2, 2]; // max active enemies per ring
+
 const RING_COUNTS = [8, 8, 8, 6, 6, 5, 4];
 const RING_RADII = [70, 115, 160, 210, 255, 295, 330];
 const ASTEROID_SIZES = [12, 13, 14, 15, 16, 17, 18];
@@ -788,6 +799,11 @@ function getCurrentShield() {
   return Math.min(state.currentShield || 0, max);
 }
 
+function getPlayerSpeed() {
+  const boost = UPGRADES.speed[state.upgrades.speed].boost;
+  return 120 * (1 + boost / 100); // base 120 px/sec
+}
+
 function canAfford(cost) {
   for (const [key, amount] of Object.entries(cost)) {
     if ((state.bars[key] || 0) < amount) return false;
@@ -846,6 +862,19 @@ function addParticles(x, y, color, count) {
 const canvas = document.getElementById('field');
 const ctx = canvas.getContext('2d');
 const CW = 700, CH = 700, CX = 350, CY = 350;
+
+// Player ship state
+let playerX = CX, playerY = CY;
+let playerAngle = -Math.PI / 2;
+let playerTarget = null; // { x, y, action, asteroid, arrivalDist }
+let playerTrail = [];
+let playerFireTimer = 0;
+let playerDead = false;
+let playerRespawnTimer = 0;
+let playerInvulnTimer = 0; // brief invulnerability after respawn
+let projectiles = []; // { x, y, vx, vy, damage, life }
+let enemies = [];     // { x, y, tier, hp, maxHp, angle, attackTimer, targetAngle }
+let enemySpawnTimer = 0;
 
 function initStars() {
   stars = [];
@@ -941,6 +970,15 @@ function drawField() {
       }
     }
   }
+
+  // Enemies
+  drawEnemies();
+
+  // Player ship
+  drawPlayer();
+
+  // Projectiles
+  drawProjectiles();
 
   // Particles
   for (const p of particles) {
@@ -1084,6 +1122,164 @@ function drawOre(a) {
   ctx.fillText('ORE', a.x, a.y + 14);
 }
 
+function drawPlayer() {
+  if (playerDead) return; // don't draw while dead
+
+  // Engine trail
+  for (let i = 0; i < playerTrail.length; i++) {
+    const t = playerTrail[i];
+    ctx.globalAlpha = t.life * 0.6;
+    ctx.fillStyle = '#4af';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Invulnerability flash
+  if (playerInvulnTimer > 0 && Math.floor(playerInvulnTimer * 8) % 2 === 0) {
+    ctx.globalAlpha = 0.4;
+  }
+
+  // Shield bubble
+  const maxShield = getMaxShield();
+  const curShield = getCurrentShield();
+  if (maxShield > 0 && curShield > 0) {
+    const shieldRadius = 14 + 2 * Math.sin(Date.now() / 300);
+    const shieldAlpha = 0.15 + 0.1 * (curShield / maxShield);
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, shieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(68, 170, 255, ${shieldAlpha})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(68, 170, 255, ${0.3 + 0.2 * (curShield / maxShield)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Ship body — small triangle
+  const size = 7;
+  ctx.save();
+  ctx.translate(playerX, playerY);
+  ctx.rotate(playerAngle);
+  // Triangle
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.7, -size * 0.55);
+  ctx.lineTo(-size * 0.4, 0);
+  ctx.lineTo(-size * 0.7, size * 0.55);
+  ctx.closePath();
+  ctx.fillStyle = '#ddeeff';
+  ctx.fill();
+  ctx.strokeStyle = '#4af';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Engine glow when moving
+  if (playerTarget) {
+    ctx.beginPath();
+    ctx.arc(-size * 0.5, 0, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(74, 170, 255, ${0.5 + 0.3 * Math.sin(Date.now() / 60)})`;
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.globalAlpha = 1;
+
+  // HP + Shield bars above ship
+  const barW = 24;
+  const barH = 3;
+  const barY = playerY - 14;
+
+  // HP bar
+  const hpFrac = state.hp / getMaxHp();
+  if (hpFrac < 1) {
+    ctx.fillStyle = '#1a1e2e';
+    ctx.fillRect(playerX - barW / 2, barY, barW, barH);
+    ctx.fillStyle = hpFrac > 0.3 ? '#44ff44' : '#ff4444';
+    ctx.fillRect(playerX - barW / 2, barY, barW * hpFrac, barH);
+  }
+
+  // Shield bar (below HP)
+  if (maxShield > 0) {
+    const sFrac = curShield / maxShield;
+    if (sFrac < 1 || hpFrac < 1) {
+      ctx.fillStyle = '#1a1e2e';
+      ctx.fillRect(playerX - barW / 2, barY - 4, barW, barH);
+      ctx.fillStyle = '#44aaff';
+      ctx.fillRect(playerX - barW / 2, barY - 4, barW * sFrac, barH);
+    }
+  }
+
+  // Carrying indicator — small dots near ship
+  if (state.carrying.length > 0) {
+    for (let i = 0; i < state.carrying.length; i++) {
+      const tierIdx = TIER_KEYS.indexOf(state.carrying[i]);
+      const orbitAngle = playerAngle + Math.PI + (i - (state.carrying.length - 1) / 2) * 0.5;
+      const ox = playerX + Math.cos(orbitAngle) * 13;
+      const oy = playerY + Math.sin(orbitAngle) * 13;
+      ctx.beginPath();
+      ctx.arc(ox, oy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = TIER_COLORS[tierIdx];
+      ctx.fill();
+    }
+  }
+}
+
+function drawEnemies() {
+  for (const e of enemies) {
+    const cfg = ENEMY_CONFIG[e.tier];
+    // Enemy glow
+    ctx.globalAlpha = 0.2;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size + 4, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Enemy body — diamond/rhombus shape
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.angle);
+    ctx.beginPath();
+    ctx.moveTo(e.size, 0);
+    ctx.lineTo(0, -e.size * 0.6);
+    ctx.lineTo(-e.size * 0.6, 0);
+    ctx.lineTo(0, e.size * 0.6);
+    ctx.closePath();
+    ctx.fillStyle = cfg.color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // HP bar
+    const hpFrac = e.hp / e.maxHp;
+    if (hpFrac < 1) {
+      const bw = e.size * 2.5;
+      ctx.fillStyle = '#1a1e2e';
+      ctx.fillRect(e.x - bw / 2, e.y - e.size - 6, bw, 2);
+      ctx.fillStyle = '#ff4444';
+      ctx.fillRect(e.x - bw / 2, e.y - e.size - 6, bw * hpFrac, 2);
+    }
+  }
+}
+
+function drawProjectiles() {
+  for (const p of projectiles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Glow
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ═══════════════════════════════════════════════════════════
 //  CANVAS CLICK HANDLER
 // ═══════════════════════════════════════════════════════════
@@ -1095,10 +1291,13 @@ canvas.addEventListener('click', function(e) {
   const mx = (e.clientX - rect.left) * scaleX;
   const my = (e.clientY - rect.top) * scaleY;
 
-  // Check station click (deposit)
+  // Can't interact while dead
+  if (playerDead) return;
+
+  // Check station click (deposit / return)
   const distStation = Math.hypot(mx - CX, my - CY);
   if (distStation < 25) {
-    depositOre();
+    setPlayerTarget(CX, CY, 'deposit', null);
     return;
   }
 
@@ -1107,7 +1306,7 @@ canvas.addEventListener('click', function(e) {
     if (!a.alive && a.hasOre) {
       const dist = Math.hypot(mx - a.x, my - a.y);
       if (dist < 14) {
-        pickupOre(a);
+        setPlayerTarget(a.x, a.y, 'pickup', a);
         return;
       }
     }
@@ -1118,11 +1317,36 @@ canvas.addEventListener('click', function(e) {
     if (!a.alive) continue;
     const dist = Math.hypot(mx - a.x, my - a.y);
     if (dist < a.baseRadius + 4) {
-      mineHit(a);
+      setPlayerTarget(a.x, a.y, 'mine', a);
       return;
     }
   }
+
+  // Click on empty space — move there
+  setPlayerTarget(mx, my, 'move', null);
 });
+
+function setPlayerTarget(x, y, action, asteroid) {
+  const dist = Math.hypot(x - playerX, y - playerY);
+  const arrivalDist = action === 'mine' ? (asteroid ? asteroid.baseRadius + 10 : 10) : 8;
+  if (dist <= arrivalDist) {
+    // Already there — do it immediately
+    executePlayerAction(action, asteroid);
+  } else {
+    playerTarget = { x, y, action, asteroid, arrivalDist };
+  }
+}
+
+function executePlayerAction(action, asteroid) {
+  if (action === 'deposit') {
+    depositOre();
+  } else if (action === 'pickup') {
+    if (asteroid && asteroid.hasOre) pickupOre(asteroid);
+  } else if (action === 'mine') {
+    if (asteroid && asteroid.alive) mineHit(asteroid);
+  }
+  // 'move' does nothing on arrival
+}
 
 // ═══════════════════════════════════════════════════════════
 //  GAME ACTIONS
@@ -1134,20 +1358,6 @@ function mineHit(asteroid) {
     addFloatingText(asteroid.x, asteroid.y - 15, 'Too tough!', '#ff6666');
     addLog(`Can't mine ${TIER_NAMES[tier]} - need better pick`, 'var(--danger)');
     return;
-  }
-
-  // Danger roll for Tier 4+
-  if (tier >= 3) {
-    const baseDanger = TIER_DANGER[tier];
-    const weaponRed = getWeaponDmg() * 0.008;
-    const fireRateRed = (getFireRate() - 1) * 0.05;
-    const chance = Math.max(0.02, baseDanger - weaponRed - fireRateRed);
-    if (Math.random() < chance) {
-      const dmg = TIER_DANGER_DMG[tier];
-      takeDamage(dmg);
-      addFloatingText(asteroid.x + 20, asteroid.y, `-${dmg} HP`, '#ff4444');
-      addParticles(asteroid.x, asteroid.y, '#ff4444', 5);
-    }
   }
 
   // Apply pick damage
@@ -1249,6 +1459,7 @@ function collectDroneBar(index) {
 }
 
 function takeDamage(amount) {
+  if (playerDead || playerInvulnTimer > 0) return;
   state.lastDamageTime = state.timePlayed;
   // Shield absorbs first
   let shield = getCurrentShield();
@@ -1256,18 +1467,212 @@ function takeDamage(amount) {
     const absorbed = Math.min(shield, amount);
     state.currentShield -= absorbed;
     amount -= absorbed;
+    if (absorbed > 0) addParticles(playerX, playerY, '#44aaff', 3);
   }
-  state.hp -= amount;
+  if (amount > 0) {
+    state.hp -= amount;
+    addParticles(playerX, playerY, '#ff4444', 4);
+  }
   if (state.hp <= 0) die();
 }
 
 function die() {
+  if (playerDead) return;
+  playerDead = true;
+  playerRespawnTimer = 2.0; // 2 seconds to respawn
+  playerTarget = null;
   const lostCount = state.carrying.length;
   state.carrying = [];
+  // Big explosion at death location
+  addParticles(playerX, playerY, '#ff4444', 20);
+  addParticles(playerX, playerY, '#ffaa00', 15);
+  addParticles(playerX, playerY, '#ffffff', 10);
+  addFloatingText(playerX, playerY - 20, `DESTROYED!`, '#ff4444');
+  if (lostCount > 0) addFloatingText(playerX, playerY - 35, `Lost ${lostCount} ore`, '#ffaa00');
+  addLog(`Ship destroyed! Lost ${lostCount} ore.`, '#ff4444');
+}
+
+function respawnPlayer() {
+  playerDead = false;
+  playerX = CX;
+  playerY = CY;
+  playerAngle = -Math.PI / 2;
   state.hp = getMaxHp();
   state.currentShield = getMaxShield();
-  addLog(`Defeated! Lost ${lostCount} ore.`, 'var(--danger)');
-  addFloatingText(CX, CY - 40, `DEFEATED! Lost ${lostCount} ore`, '#ff4444');
+  playerInvulnTimer = 2.0; // 2s invulnerability
+  addLog('Ship repaired at port.', '#4a9eff');
+  addFloatingText(CX, CY - 30, 'Respawned!', '#4a9eff');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ENEMY SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+function spawnEnemy(tier) {
+  const cfg = ENEMY_CONFIG[tier];
+  if (!cfg) return;
+  // Spawn at random position on the ring
+  const angle = Math.random() * Math.PI * 2;
+  const ringR = RING_RADII[tier];
+  const jitter = (Math.random() - 0.5) * 40;
+  enemies.push({
+    x: CX + Math.cos(angle) * (ringR + jitter),
+    y: CY + Math.sin(angle) * (ringR + jitter),
+    tier,
+    hp: cfg.hp,
+    maxHp: cfg.hp,
+    angle: Math.random() * Math.PI * 2,
+    attackTimer: 0,
+    patrolAngle: angle,
+    patrolDir: Math.random() > 0.5 ? 1 : -1,
+    size: cfg.size,
+  });
+}
+
+function tickEnemySpawns(dt) {
+  enemySpawnTimer += dt;
+  if (enemySpawnTimer < ENEMY_SPAWN_INTERVAL) return;
+  enemySpawnTimer -= ENEMY_SPAWN_INTERVAL;
+
+  for (let tier = 3; tier < 7; tier++) {
+    const maxE = ENEMIES_PER_RING[tier];
+    const current = enemies.filter(e => e.tier === tier).length;
+    if (current < maxE) {
+      spawnEnemy(tier);
+    }
+  }
+}
+
+function tickEnemies(dt) {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    const cfg = ENEMY_CONFIG[e.tier];
+    const ringR = RING_RADII[e.tier];
+    const distToPlayer = Math.hypot(playerX - e.x, playerY - e.y);
+    const distFromCenter = Math.hypot(e.x - CX, e.y - CY);
+
+    // Leash: how far the enemy can stray from its ring before forced back
+    const leashDist = 35;
+    const tooFarFromRing = Math.abs(distFromCenter - ringR) > leashDist;
+
+    // Small aggro range — only notice player when very close
+    const aggroRange = 60;
+    const chasing = !playerDead && distToPlayer < aggroRange && !tooFarFromRing;
+
+    if (chasing) {
+      // Chase player but stay near ring
+      const angleToPlayer = Math.atan2(playerY - e.y, playerX - e.x);
+      e.angle = angleToPlayer;
+      if (distToPlayer > cfg.attackRange) {
+        const nx = e.x + Math.cos(angleToPlayer) * cfg.speed * dt;
+        const ny = e.y + Math.sin(angleToPlayer) * cfg.speed * dt;
+        // Only move if it won't pull too far from ring
+        const newDistFromCenter = Math.hypot(nx - CX, ny - CY);
+        if (Math.abs(newDistFromCenter - ringR) <= leashDist) {
+          e.x = nx;
+          e.y = ny;
+        }
+      }
+      // Attack player when in range
+      if (distToPlayer <= cfg.attackRange) {
+        e.attackTimer += dt;
+        if (e.attackTimer >= cfg.attackRate) {
+          e.attackTimer -= cfg.attackRate;
+          takeDamage(cfg.damage);
+          addFloatingText(playerX + (Math.random()-0.5)*20, playerY - 10, `-${cfg.damage}`, '#ff4444');
+        }
+      }
+    } else {
+      // Patrol: orbit around the ring, return to ring if too far
+      e.attackTimer = 0;
+      e.patrolAngle += e.patrolDir * 0.2 * dt;
+      const targetX = CX + Math.cos(e.patrolAngle) * ringR;
+      const targetY = CY + Math.sin(e.patrolAngle) * ringR;
+      const dx = targetX - e.x;
+      const dy = targetY - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 2) {
+        // Move faster to return if strayed from ring
+        const returnSpeed = tooFarFromRing ? cfg.speed : cfg.speed * 0.5;
+        e.x += (dx / d) * returnSpeed * dt;
+        e.y += (dy / d) * returnSpeed * dt;
+        e.angle = Math.atan2(dy, dx);
+      }
+    }
+
+    // Remove if dead
+    if (e.hp <= 0) {
+      addParticles(e.x, e.y, cfg.color, 10);
+      addParticles(e.x, e.y, '#ffffff', 5);
+      addFloatingText(e.x, e.y - 15, 'Destroyed!', cfg.color);
+      enemies.splice(i, 1);
+    }
+  }
+}
+
+function tickPlayerCombat(dt) {
+  if (playerDead) return;
+  if (!state.upgrades.armory) return; // need armory to shoot
+
+  playerFireTimer += dt;
+  const fireInterval = 1 / getFireRate();
+  if (playerFireTimer >= fireInterval) {
+    // Find nearest enemy in range
+    let nearest = null;
+    let nearestDist = 200; // max shooting range
+    for (const e of enemies) {
+      const d = Math.hypot(e.x - playerX, e.y - playerY);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = e;
+      }
+    }
+    if (nearest) {
+      playerFireTimer -= fireInterval;
+      // Fire projectile
+      const angle = Math.atan2(nearest.y - playerY, nearest.x - playerX);
+      const speed = 300;
+      projectiles.push({
+        x: playerX + Math.cos(angle) * 10,
+        y: playerY + Math.sin(angle) * 10,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        damage: getWeaponDmg(),
+        life: 0.8,
+        color: '#44ff44',
+      });
+    } else {
+      // Don't accumulate fire timer when no targets
+      playerFireTimer = Math.min(playerFireTimer, fireInterval);
+    }
+  }
+}
+
+function tickProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+
+    if (p.life <= 0 || p.x < 0 || p.x > CW || p.y < 0 || p.y > CH) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+
+    // Check hit on enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < e.size + 3) {
+        e.hp -= p.damage;
+        addParticles(p.x, p.y, ENEMY_CONFIG[e.tier].color, 3);
+        addFloatingText(e.x, e.y - e.size - 5, `-${p.damage}`, '#44ff44');
+        projectiles.splice(i, 1);
+        break;
+      }
+    }
+  }
 }
 
 function purchaseUpgrade(category, level, subIdx) {
@@ -1370,6 +1775,45 @@ function gameLoop() {
 
   state.timePlayed += dt;
 
+  // Tick player movement
+  if (playerTarget && !playerDead) {
+    const dx = playerTarget.x - playerX;
+    const dy = playerTarget.y - playerY;
+    const dist = Math.hypot(dx, dy);
+    const arrDist = playerTarget.arrivalDist || 8;
+
+    // Face toward target
+    playerAngle = Math.atan2(dy, dx);
+
+    if (dist <= arrDist) {
+      // Arrived
+      executePlayerAction(playerTarget.action, playerTarget.asteroid);
+      playerTarget = null;
+    } else {
+      const speed = getPlayerSpeed();
+      const step = speed * dt;
+      if (step >= dist - arrDist) {
+        // Will arrive this frame
+        const ratio = (dist - arrDist) / dist;
+        playerX += dx * ratio;
+        playerY += dy * ratio;
+        executePlayerAction(playerTarget.action, playerTarget.asteroid);
+        playerTarget = null;
+      } else {
+        playerX += (dx / dist) * step;
+        playerY += (dy / dist) * step;
+      }
+      // Engine trail
+      playerTrail.push({ x: playerX - Math.cos(playerAngle) * 6, y: playerY - Math.sin(playerAngle) * 6, life: 0.3, size: 1.5 + Math.random() });
+    }
+  }
+
+  // Tick player trail
+  for (let i = playerTrail.length - 1; i >= 0; i--) {
+    playerTrail[i].life -= dt;
+    if (playerTrail[i].life <= 0) playerTrail.splice(i, 1);
+  }
+
   // Tick refiners (player + drone)
   const allRefiners = state.refiners.concat(state.droneRefiners);
   for (const ref of allRefiners) {
@@ -1444,9 +1888,26 @@ function gameLoop() {
     }
   }
 
+  // Tick player respawn
+  if (playerDead) {
+    playerRespawnTimer -= dt;
+    if (playerRespawnTimer <= 0) {
+      respawnPlayer();
+    }
+  }
+
+  // Tick invulnerability
+  if (playerInvulnTimer > 0) playerInvulnTimer -= dt;
+
+  // Tick enemies
+  tickEnemySpawns(dt);
+  tickEnemies(dt);
+  tickPlayerCombat(dt);
+  tickProjectiles(dt);
+
   // Tick shield regen
   const maxShield = getMaxShield();
-  if (maxShield > 0 && getCurrentShield() < maxShield) {
+  if (!playerDead && maxShield > 0 && getCurrentShield() < maxShield) {
     const timeSinceDmg = state.timePlayed - (state.lastDamageTime || 0);
     if (timeSinceDmg >= getShieldRegenDelay()) {
       state.currentShield = Math.min(maxShield, (state.currentShield || 0) + 10 * dt);
@@ -1837,6 +2298,7 @@ function loadGame() {
       }
     }
     if (saved.refiners) state.refiners = saved.refiners;
+    if (saved.droneRefiners) state.droneRefiners = saved.droneRefiners;
     if (saved.carrying) state.carrying = saved.carrying;
     if (typeof saved.hp === 'number') state.hp = saved.hp;
     if (typeof saved.currentShield === 'number') state.currentShield = saved.currentShield;
@@ -1916,6 +2378,16 @@ function resetGame() {
   gameLog = [];
   droneTimer = 0;
   autoCollectTimer = 0;
+  playerX = CX; playerY = CY;
+  playerTarget = null;
+  playerTrail = [];
+  playerDead = false;
+  playerRespawnTimer = 0;
+  playerInvulnTimer = 0;
+  playerFireTimer = 0;
+  enemies = [];
+  projectiles = [];
+  enemySpawnTimer = 0;
   initAsteroids();
   createRefinerElements();
   renderUpgradeTab();
