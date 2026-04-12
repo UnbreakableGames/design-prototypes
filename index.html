@@ -518,6 +518,7 @@ const TIER_NAMES = ['Iron','Copper','Cobalt','Emeralite','Aurium','Voidstone','C
 const TIER_COLORS = ['#8a8a8a','#b87333','#4169e1','#50c878','#ffd700','#9b59b6','#dc143c'];
 const TIER_HITS = [3, 5, 8, 12, 18, 25, 35];
 const TIER_REFINE_TIME = [10, 20, 35, 60, 90, 120, 180];
+const TIER_YIELD = [10, 1, 1, 1, 1, 1, 1];
 const TIER_DANGER = [0, 0, 0, 0.25, 0.35, 0.45, 0.55];
 const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 
@@ -1205,8 +1206,9 @@ function collectBar(index) {
   if (refiner.progress < refineTime) return;
   const key = refiner.ore;
   const tierIdx = TIER_KEYS.indexOf(key);
-  state.bars[key] = (state.bars[key] || 0) + 1;
-  addLog(`+1 ${TIER_NAMES[tierIdx]} Bar`, TIER_COLORS[tierIdx]);
+  const yield_ = TIER_YIELD[tierIdx];
+  state.bars[key] = (state.bars[key] || 0) + yield_;
+  addLog(`+${yield_} ${TIER_NAMES[tierIdx]} Bar${yield_ > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
   refiner.ore = null;
   refiner.progress = 0;
   createRefinerElements();
@@ -1523,7 +1525,8 @@ function renderRefiners() {
       fill.style.background = TIER_COLORS[tierIdx];
 
       if (ref.progress >= refineTime) {
-        status.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">${TIER_NAMES[tierIdx]} Bar - Collect!</button>`;
+        const y = TIER_YIELD[tierIdx];
+        status.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">${y > 1 ? y + ' ' : ''}${TIER_NAMES[tierIdx]} Bar${y > 1 ? 's' : ''} - Collect!</button>`;
       } else {
         const remaining = Math.ceil(refineTime - ref.progress);
         status.innerHTML = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} - ${remaining}s</span>`;
@@ -1746,10 +1749,12 @@ function processOffline() {
     let produced = 0;
     for (let c = 0; c < cycles && c < 100; c++) {
       for (let d = 0; d < getDroneCount(); d++) {
-        const tierKey = TIER_KEYS[Math.min(maxT, 3) - 1];
+        const tierIdx = Math.min(maxT, 3) - 1;
+        const tierKey = TIER_KEYS[tierIdx];
+        const yield_ = TIER_YIELD[tierIdx];
         // Auto-collect offline drone output as bars directly
-        state.bars[tierKey] = (state.bars[tierKey] || 0) + 1;
-        produced++;
+        state.bars[tierKey] = (state.bars[tierKey] || 0) + yield_;
+        produced += yield_;
       }
     }
     if (produced > 0) addLog(`Offline: drones produced ${produced} bars`, '#4a9eff');
