@@ -46,11 +46,13 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
 
 /* Refiners */
 .refiner { margin-bottom: 6px; }
-.refiner-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
-.refiner-track { width: 100%; height: 8px; background: #1a1e2e; border-radius: 4px; overflow: hidden; }
+.refiner-header { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.refiner-label { font-size: 11px; color: var(--dim); }
+.refiner-info { font-size: 11px; margin-left: auto; }
+.refiner-row { display: flex; align-items: center; gap: 6px; }
+.refiner-track { flex: 1; height: 8px; background: #1a1e2e; border-radius: 4px; overflow: hidden; }
 .refiner-fill { height: 100%; border-radius: 4px; transition: width 0.15s linear; }
-.refiner-status { font-size: 11px; margin-top: 2px; }
-.refiner-collect { font-size: 11px; padding: 2px 8px; margin-top: 2px; background: #1a3a1a; border: 1px solid var(--hp); color: var(--hp); border-radius: 4px; cursor: pointer; }
+.refiner-collect { font-size: 11px; padding: 3px 10px; background: #1a3a1a; border: 1px solid var(--hp); color: var(--hp); border-radius: 4px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 .refiner-collect:hover { background: #2a4a2a; }
 
 /* Log */
@@ -517,8 +519,8 @@ const TIER_KEYS = ['iron','copper','cobalt','emeralite','aurium','voidstone','co
 const TIER_NAMES = ['Iron','Copper','Cobalt','Emeralite','Aurium','Voidstone','Cosmium'];
 const TIER_COLORS = ['#8a8a8a','#b87333','#4169e1','#50c878','#ffd700','#9b59b6','#dc143c'];
 const TIER_HITS = [3, 5, 8, 12, 18, 25, 35];
-const TIER_BAR_INTERVAL = [3, 20, 35, 60, 90, 120, 180]; // seconds per bar
-const TIER_YIELD = [10, 1, 1, 1, 1, 1, 1]; // bars per ore
+const TIER_BAR_INTERVAL = [3, 4, 5, 8, 12, 15, 20]; // seconds per bar
+const TIER_YIELD = [10, 8, 6, 5, 4, 3, 2]; // bars per ore
 const TIER_DANGER = [0, 0, 0, 0.25, 0.35, 0.45, 0.55];
 const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 
@@ -1510,9 +1512,14 @@ function createRefinerElements() {
   const el = document.getElementById('refiners');
   el.innerHTML = state.refiners.map((ref, i) => {
     return `<div class="refiner" id="refiner-${i}">
-      <div class="refiner-label">Refiner ${i + 1}</div>
-      <div class="refiner-track"><div class="refiner-fill" id="ref-fill-${i}"></div></div>
-      <div class="refiner-status" id="ref-status-${i}"></div>
+      <div class="refiner-header">
+        <span class="refiner-label">Refiner ${i + 1}</span>
+        <span class="refiner-info" id="ref-info-${i}"></span>
+      </div>
+      <div class="refiner-row">
+        <div class="refiner-track"><div class="refiner-fill" id="ref-fill-${i}"></div></div>
+        <span id="ref-btn-${i}"></span>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1521,31 +1528,36 @@ function renderRefiners() {
   for (let i = 0; i < state.refiners.length; i++) {
     const ref = state.refiners[i];
     const fill = document.getElementById(`ref-fill-${i}`);
-    const status = document.getElementById(`ref-status-${i}`);
-    if (!fill || !status) continue;
+    const info = document.getElementById(`ref-info-${i}`);
+    const btn = document.getElementById(`ref-btn-${i}`);
+    if (!fill || !info || !btn) continue;
 
     if (!ref.ore) {
       fill.style.width = '0%';
       fill.style.background = '#333';
-      status.innerHTML = '<span style="color:var(--dim)">Empty</span>';
+      info.innerHTML = '<span style="color:var(--dim)">Empty</span>';
+      btn.innerHTML = '';
     } else {
       const tierIdx = TIER_KEYS.indexOf(ref.ore);
       const totalYield = TIER_YIELD[tierIdx];
       const interval = TIER_BAR_INTERVAL[tierIdx] / getRefinerSpeedMult();
       const depleted = ref.barsProduced >= totalYield;
-      // Progress bar shows progress toward next bar
       const pct = depleted ? 100 : Math.min(100, (ref.progress / interval) * 100);
       fill.style.width = `${pct}%`;
       fill.style.background = TIER_COLORS[tierIdx];
 
-      let html = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
-      if (ref.barsReady > 0) {
-        html += ` <button class="refiner-collect" onclick="collectBar(${i})">${ref.barsReady} Bar${ref.barsReady > 1 ? 's' : ''} - Collect!</button>`;
-      } else if (!depleted) {
+      let infoHtml = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} ${ref.barsProduced}/${totalYield}</span>`;
+      if (!depleted && ref.barsReady === 0) {
         const remaining = Math.ceil(interval - ref.progress);
-        html += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
+        infoHtml += ` <span style="color:var(--dim)">next in ${remaining}s</span>`;
       }
-      status.innerHTML = html;
+      info.innerHTML = infoHtml;
+
+      if (ref.barsReady > 0) {
+        btn.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">Collect ${ref.barsReady}</button>`;
+      } else {
+        btn.innerHTML = '';
+      }
     }
   }
 }
