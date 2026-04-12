@@ -66,11 +66,14 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
 
 /* Upgrades */
 #upgrades { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+#upgrade-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.upgrade-col { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+.upgrade-col-header { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); font-weight: 600; padding-bottom: 4px; border-bottom: 1px solid var(--border); margin-bottom: 2px; position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .tabs { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
 .tab { padding: 6px 14px; font-size: 12px; background: transparent; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; cursor: pointer; }
 .tab.active { background: var(--border); color: var(--text); border-color: var(--accent); }
 .tab:hover { color: var(--text); }
-#upgrade-content { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 300px; overflow-y: auto; }
+#upgrade-content { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 280px; overflow-y: auto; }
 .upgrade-card { background: #1a1e2e; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
 .upgrade-card.maxed { border-color: var(--hp); opacity: 0.7; }
 .upgrade-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
@@ -111,6 +114,7 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
 @media (max-width: 700px) {
   #main { flex-direction: column; }
   #sidebar { width: 100%; }
+  #upgrade-columns { grid-template-columns: 1fr; }
   #upgrade-content { grid-template-columns: 1fr; }
 }
 </style>
@@ -158,6 +162,16 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
   </div>
 
   <div id="upgrades">
+    <div id="upgrade-columns">
+      <div class="upgrade-col">
+        <div class="upgrade-col-header">Mining</div>
+        <div id="col-mining"></div>
+      </div>
+      <div class="upgrade-col">
+        <div class="upgrade-col-header">Buildings</div>
+        <div id="col-buildings"></div>
+      </div>
+    </div>
     <div class="tabs" id="upgrade-tabs"></div>
     <div id="upgrade-content"></div>
   </div>
@@ -737,7 +751,7 @@ let particles = [];
 let floatingTexts = [];
 let stars = [];
 let gameLog = [];
-let activeTab = 'mining';
+let activeTab = 'combat';
 let droneTimer = 0;
 let autoCollectTimer = 0;
 let saveTimer = 0;
@@ -1483,6 +1497,7 @@ function renderUI() {
   renderRefiners();
 
   // Upgrades (keep buy buttons in sync with bar counts)
+  renderUpgradeColumns();
   renderUpgradeTab();
 
   // Drone/auto-collect status
@@ -1586,8 +1601,6 @@ function renderLog() {
 // ═══════════════════════════════════════════════════════════
 
 const TABS = [
-  { id: 'mining', label: 'Mining' },
-  { id: 'buildings', label: 'Buildings' },
   { id: 'combat', label: 'Combat' },
   { id: 'cosmetics', label: 'Cosmetics' },
 ];
@@ -1605,6 +1618,30 @@ function switchTab(tabId) {
   renderUpgradeTab();
 }
 
+function renderUpgradeColumns() {
+  const miningHtml = renderLinearUpgrade('pick', 'Mining Pick', UPGRADES.pick, lvl => `${UPGRADES.pick[lvl].name} (${UPGRADES.pick[lvl].damage} dmg, Tier 1-${UPGRADES.pick[lvl].maxTier})`)
+    + renderLinearUpgrade('speed', 'Movement Speed', UPGRADES.speed, lvl => UPGRADES.speed[lvl].boost === 0 ? 'Base speed' : `+${UPGRADES.speed[lvl].boost}% speed`)
+    + renderLinearUpgrade('capacity', 'Ore Capacity', UPGRADES.capacity, lvl => `Carry ${UPGRADES.capacity[lvl].capacity} ore`);
+  const miningEl = document.getElementById('col-mining');
+  if (miningEl.dataset.hash !== miningHtml.length + '') {
+    miningEl.innerHTML = miningHtml;
+    miningEl.dataset.hash = miningHtml.length + '';
+  }
+
+  const buildingsHtml = renderLinearUpgrade('landingPad', 'Landing Pad', UPGRADES.landingPad, lvl => UPGRADES.landingPad[lvl].effect)
+    + renderRefinerUpgrade()
+    + renderLinearUpgrade('refinerSpeed', 'Refiner Speed', UPGRADES.refinerSpeed, lvl => `${UPGRADES.refinerSpeed[lvl].mult}x speed`)
+    + renderLinearUpgrade('thrusterDock', 'Thruster Dock', UPGRADES.thrusterDock, lvl => UPGRADES.thrusterDock[lvl].effect)
+    + renderArmoryUpgrade()
+    + renderLinearUpgrade('droneBay', 'Drone Bay', UPGRADES.droneBay, lvl => { const d = UPGRADES.droneBay[lvl]; return d.drones === 0 ? 'Not built' : `${d.drones} drones (Tier 1-${d.maxTier})`; })
+    + renderLinearUpgrade('autoCollector', 'Auto-Collector', UPGRADES.autoCollector, lvl => { const a = UPGRADES.autoCollector[lvl]; return a.interval === 0 ? 'Off' : `Every ${a.interval}s`; });
+  const buildingsEl = document.getElementById('col-buildings');
+  if (buildingsEl.dataset.hash !== buildingsHtml.length + '') {
+    buildingsEl.innerHTML = buildingsHtml;
+    buildingsEl.dataset.hash = buildingsHtml.length + '';
+  }
+}
+
 function renderUpgradeTab() {
   const el = document.getElementById('upgrade-content');
   const newHtml = buildUpgradeTabHtml();
@@ -1615,20 +1652,6 @@ function renderUpgradeTab() {
 }
 
 function buildUpgradeTabHtml() {
-  if (activeTab === 'mining') {
-    return renderLinearUpgrade('pick', 'Mining Pick', UPGRADES.pick, lvl => `${UPGRADES.pick[lvl].name} (${UPGRADES.pick[lvl].damage} dmg, Tier 1-${UPGRADES.pick[lvl].maxTier})`)
-      + renderLinearUpgrade('speed', 'Movement Speed', UPGRADES.speed, lvl => UPGRADES.speed[lvl].boost === 0 ? 'Base speed' : `+${UPGRADES.speed[lvl].boost}% speed`)
-      + renderLinearUpgrade('capacity', 'Ore Capacity', UPGRADES.capacity, lvl => `Carry ${UPGRADES.capacity[lvl].capacity} ore`);
-  }
-  if (activeTab === 'buildings') {
-    return renderLinearUpgrade('landingPad', 'Landing Pad', UPGRADES.landingPad, lvl => UPGRADES.landingPad[lvl].effect)
-      + renderRefinerUpgrade()
-      + renderLinearUpgrade('refinerSpeed', 'Refiner Speed', UPGRADES.refinerSpeed, lvl => `${UPGRADES.refinerSpeed[lvl].mult}x speed`)
-      + renderLinearUpgrade('thrusterDock', 'Thruster Dock', UPGRADES.thrusterDock, lvl => UPGRADES.thrusterDock[lvl].effect)
-      + renderArmoryUpgrade()
-      + renderLinearUpgrade('droneBay', 'Drone Bay', UPGRADES.droneBay, lvl => { const d = UPGRADES.droneBay[lvl]; return d.drones === 0 ? 'Not built' : `${d.drones} drones (Tier 1-${d.maxTier})`; })
-      + renderLinearUpgrade('autoCollector', 'Auto-Collector', UPGRADES.autoCollector, lvl => { const a = UPGRADES.autoCollector[lvl]; return a.interval === 0 ? 'Off' : `Every ${a.interval}s`; });
-  }
   if (activeTab === 'combat') {
     if (!state.upgrades.armory) {
       return '<div class="upgrade-card"><div class="upgrade-name" style="color:var(--danger)">Armory Required</div><div class="upgrade-effect">Build the Armory in the Buildings tab to unlock combat upgrades.</div></div>';
