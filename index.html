@@ -799,6 +799,10 @@ function getCurrentShield() {
   return Math.min(state.currentShield || 0, max);
 }
 
+function isAtPort() {
+  return Math.hypot(playerX - CX, playerY - CY) < 30 && !playerDead;
+}
+
 function getPlayerSpeed() {
   const boost = UPGRADES.speed[state.upgrades.speed].boost;
   return 120 * (1 + boost / 100); // base 120 px/sec
@@ -1432,7 +1436,7 @@ function depositOre() {
   }
 }
 
-function collectFromRefiner(refiner, isDrone) {
+function doCollectRefiner(refiner, isDrone) {
   if (!refiner || !refiner.ore || refiner.barsReady <= 0) return;
   const key = refiner.ore;
   const tierIdx = TIER_KEYS.indexOf(key);
@@ -1441,7 +1445,6 @@ function collectFromRefiner(refiner, isDrone) {
   refiner.barsReady = 0;
   const prefix = isDrone ? '🤖 ' : '';
   addLog(`${prefix}+${count} ${TIER_NAMES[tierIdx]} Bar${count > 1 ? 's' : ''}`, TIER_COLORS[tierIdx]);
-  // If ore is fully depleted, clear the refiner
   if (refiner.barsProduced >= TIER_YIELD[tierIdx]) {
     refiner.ore = null;
     refiner.progress = 0;
@@ -1451,11 +1454,21 @@ function collectFromRefiner(refiner, isDrone) {
 }
 
 function collectBar(index) {
-  collectFromRefiner(state.refiners[index], false);
+  if (!isAtPort()) return;
+  doCollectRefiner(state.refiners[index], false);
 }
 
 function collectDroneBar(index) {
-  collectFromRefiner(state.droneRefiners[index], true);
+  if (!isAtPort()) return;
+  doCollectRefiner(state.droneRefiners[index], true);
+}
+
+// Auto-collector bypasses port check
+function autoCollectBar(index) {
+  doCollectRefiner(state.refiners[index], false);
+}
+function autoCollectDroneBar(index) {
+  doCollectRefiner(state.droneRefiners[index], true);
 }
 
 function takeDamage(amount) {
@@ -1676,6 +1689,7 @@ function tickProjectiles(dt) {
 }
 
 function purchaseUpgrade(category, level, subIdx) {
+  if (!isAtPort()) return;
   let cost, upgradeData;
 
   if (category === 'cosmetic') {
@@ -1877,12 +1891,12 @@ function gameLoop() {
       autoCollectTimer -= acInterval;
       for (let i = 0; i < state.refiners.length; i++) {
         if (state.refiners[i].ore && state.refiners[i].barsReady > 0) {
-          collectBar(i);
+          autoCollectBar(i);
         }
       }
       for (let i = 0; i < state.droneRefiners.length; i++) {
         if (state.droneRefiners[i].ore && state.droneRefiners[i].barsReady > 0) {
-          collectDroneBar(i);
+          autoCollectDroneBar(i);
         }
       }
     }
@@ -2085,10 +2099,11 @@ function renderRefinerRow(ref, fillId, infoId, btnId, collectFn) {
       info.dataset.state = infoKey;
     }
 
-    const btnKey = ref.barsReady > 0 ? `collect-${ref.barsReady}` : '';
+    const atPort = isAtPort();
+    const btnKey = ref.barsReady > 0 ? `collect-${ref.barsReady}-${atPort}` : '';
     if (btn.dataset.state !== btnKey) {
       btn.innerHTML = ref.barsReady > 0
-        ? `<button class="refiner-collect" onclick="${collectFn}">Collect ${ref.barsReady}</button>`
+        ? `<button class="refiner-collect" ${!atPort ? 'disabled style="opacity:0.4;cursor:default"' : ''} onclick="${collectFn}">Collect ${ref.barsReady}</button>`
         : '';
       btn.dataset.state = btnKey;
     }
@@ -2193,14 +2208,15 @@ function renderLinearUpgrade(key, name, arr, effectFn) {
   const maxLevel = arr.length - 1;
   const isMaxed = level >= maxLevel;
   const nextCost = !isMaxed ? arr[level + 1].cost : {};
-  const affordable = !isMaxed && canAfford(nextCost);
+  const atPort = isAtPort();
+  const affordable = !isMaxed && canAfford(nextCost) && atPort;
 
   return `<div class="upgrade-card ${isMaxed ? 'maxed' : ''}">
     <div class="upgrade-name">${name} <span style="color:var(--dim)">Lv.${level + 1}/${maxLevel + 1}</span></div>
     <div class="upgrade-effect">Current: ${effectFn(level)}</div>
     ${!isMaxed ? `<div class="upgrade-effect">Next: ${effectFn(level + 1)}</div>
     <div class="upgrade-cost">${formatCostHTML(nextCost)}</div>
-    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('${key}')">Buy</button>` : '<div class="maxed-label">MAX</div>'}
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('${key}')">${atPort ? 'Buy' : '⚓ Dock to buy'}</button>` : '<div class="maxed-label">MAX</div>'}
   </div>`;
 }
 
@@ -2209,14 +2225,15 @@ function renderRefinerUpgrade() {
   const maxCount = UPGRADES.refiners.length;
   const isMaxed = count >= maxCount;
   const nextCost = !isMaxed ? UPGRADES.refiners[count].cost : {};
-  const affordable = !isMaxed && canAfford(nextCost);
+  const atPort = isAtPort();
+  const affordable = !isMaxed && canAfford(nextCost) && atPort;
 
   return `<div class="upgrade-card ${isMaxed ? 'maxed' : ''}">
     <div class="upgrade-name">Refiners <span style="color:var(--dim)">${count}/${maxCount}</span></div>
     <div class="upgrade-effect">Current: ${count} refiner${count > 1 ? 's' : ''}</div>
     ${!isMaxed ? `<div class="upgrade-effect">Next: ${count + 1} refiners</div>
     <div class="upgrade-cost">${formatCostHTML(nextCost)}</div>
-    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('refinerCount')">Buy</button>` : '<div class="maxed-label">MAX</div>'}
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('refinerCount')">${atPort ? 'Buy' : '⚓ Dock to buy'}</button>` : '<div class="maxed-label">MAX</div>'}
   </div>`;
 }
 
@@ -2229,12 +2246,13 @@ function renderArmoryUpgrade() {
     </div>`;
   }
   const cost = UPGRADES.armory.cost;
-  const affordable = canAfford(cost);
+  const atPort = isAtPort();
+  const affordable = canAfford(cost) && atPort;
   return `<div class="upgrade-card">
     <div class="upgrade-name">Armory</div>
     <div class="upgrade-effect">Unlocks all combat upgrades</div>
     <div class="upgrade-cost">${formatCostHTML(cost)}</div>
-    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('armory')">Build</button>
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('armory')">${atPort ? 'Build' : '⚓ Dock to build'}</button>
   </div>`;
 }
 
@@ -2259,12 +2277,13 @@ function renderCosmeticCategory(catKey, catName) {
         <div class="maxed-label">OWNED</div>
       </div>`;
     }
-    const affordable = canAfford(item.cost);
+    const atPort = isAtPort();
+    const affordable = canAfford(item.cost) && atPort;
     return `<div class="upgrade-card">
       <div class="upgrade-name">${item.name} <span style="color:var(--dim)">${catName}</span></div>
       <div class="upgrade-effect">${item.desc}</div>
       <div class="upgrade-cost">${formatCostHTML(item.cost)}</div>
-      <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('cosmetic', ${Object.keys(COSMETICS).indexOf(catKey)}, ${idx})">Buy</button>
+      <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('cosmetic', ${Object.keys(COSMETICS).indexOf(catKey)}, ${idx})">${atPort ? 'Buy' : '⚓ Dock to buy'}</button>
     </div>`;
   }).join('');
 }
