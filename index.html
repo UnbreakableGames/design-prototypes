@@ -87,7 +87,16 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
 #design-doc { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
 #design-doc summary { padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--dim); }
 #design-doc summary:hover { color: var(--text); }
-#design-doc .doc-content { padding: 14px; font-size: 13px; line-height: 1.6; max-height: 500px; overflow-y: auto; }
+#design-doc .doc-content { padding: 14px; font-size: 13px; line-height: 1.6; max-height: 80vh; overflow-y: auto; }
+#design-doc h3 { color: var(--accent); margin: 20px 0 8px; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+#design-doc h3:first-child { margin-top: 0; }
+#design-doc h5 { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 4px; }
+#design-doc ul { margin: 4px 0 8px 18px; }
+#design-doc li { margin: 2px 0; }
+#design-doc p { margin: 4px 0 8px; }
+#design-doc .cost-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 11px; margin: 1px 2px; border: 1px solid; }
+#design-doc .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0; }
+@media (max-width: 700px) { #design-doc .section-grid { grid-template-columns: 1fr; } }
 #design-doc table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
 #design-doc th, #design-doc td { padding: 4px 8px; border: 1px solid var(--border); text-align: left; }
 #design-doc th { background: #1a1e2e; color: var(--dim); }
@@ -152,26 +161,347 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
   </div>
 
   <details id="design-doc">
-    <summary>Design Document Reference (click to expand)</summary>
+    <summary>Design Document v6 &mdash; Space Miner Idle (click to expand)</summary>
     <div class="doc-content">
-      <h4>Ore & Asteroid Tiers</h4>
+
+      <h3>Game Overview</h3>
+      <p><b>Space Miner Idle</b> is a Roblox idle/simulator game where players mine asteroids in a 3D asteroid field, collect ore, refine it into bars, and spend those bars on upgrades. The game features 7 ore tiers arranged in concentric rings around the player's space port, with increasing difficulty, danger, and reward as players move to outer rings.</p>
+      <p><b>Target audience:</b> Roblox players ages 8-16 who enjoy idle/simulator games (Bee Swarm Simulator, Mining Simulator, Pet Simulator style).</p>
+      <p><b>Session target:</b> 30-60 minute initial session, with meaningful progression checkpoints every 5-10 minutes.</p>
+
+      <h3>Core Loop</h3>
+      <p style="text-align:center; font-size: 14px; padding: 10px; background: #1a1e2e; border-radius: 6px; margin: 8px 0;">
+        <b>Mine Asteroid</b> &rarr; <b>Collect Ore</b> &rarr; <b>Refine into Bar</b> &rarr; <b>Spend Bars on Upgrades</b> &rarr; <b>Repeat</b>
+      </p>
+      <ul>
+        <li><b>Mine:</b> Click/hit asteroids to break them. Each has an HP value based on tier. Your pick determines damage per hit and which tiers you can mine.</li>
+        <li><b>Collect:</b> Destroyed asteroids drop ore. Walk over it (or click in prototype) to pick up. Limited by carry capacity.</li>
+        <li><b>Refine:</b> Return to your space port and deposit ore into refiners. Each refiner processes one ore at a time with a visible progress bar.</li>
+        <li><b>Spend:</b> Completed bars are added to your inventory. Spend them on upgrades across 4 categories: Mining, Buildings, Combat, and Cosmetics.</li>
+      </ul>
+
+      <h3>Asteroid Field &amp; Ore Tiers</h3>
+      <p>The field is organized in 7 concentric rings around the space port. Inner rings are safe and easy; outer rings are harder, slower to refine, and have combat danger.</p>
       <table>
-        <tr><th>Tier</th><th>Color</th><th>Ore</th><th>Hits</th><th>Refine</th><th>Enemies?</th></tr>
-        <tr><td>1</td><td style="color:var(--iron)">Grey</td><td>Iron</td><td>3</td><td>10s</td><td>No</td></tr>
-        <tr><td>2</td><td style="color:var(--copper)">Copper</td><td>Copper</td><td>5</td><td>20s</td><td>No</td></tr>
-        <tr><td>3</td><td style="color:var(--cobalt)">Blue</td><td>Cobalt</td><td>8</td><td>35s</td><td>No</td></tr>
-        <tr><td>4</td><td style="color:var(--emeralite)">Green</td><td>Emeralite</td><td>12</td><td>60s</td><td>Yes</td></tr>
-        <tr><td>5</td><td style="color:var(--aurium)">Gold</td><td>Aurium</td><td>18</td><td>90s</td><td>Yes</td></tr>
-        <tr><td>6</td><td style="color:var(--voidstone)">Purple</td><td>Voidstone</td><td>25</td><td>120s</td><td>Yes</td></tr>
-        <tr><td>7</td><td style="color:var(--cosmium)">Red</td><td>Cosmium</td><td>35</td><td>180s</td><td>Yes</td></tr>
+        <tr><th>Tier</th><th>Ring</th><th>Color</th><th>Ore &rarr; Bar</th><th>Hits to Break</th><th>Refine Time</th><th>Asteroids</th><th>Danger</th></tr>
+        <tr><td>1</td><td>Inner</td><td style="color:var(--iron)">&#9679; Grey</td><td>Iron</td><td>3</td><td>10s</td><td>8</td><td>None</td></tr>
+        <tr><td>2</td><td>2</td><td style="color:var(--copper)">&#9679; Copper</td><td>Copper</td><td>5</td><td>20s</td><td>8</td><td>None</td></tr>
+        <tr><td>3</td><td>3</td><td style="color:var(--cobalt)">&#9679; Blue</td><td>Cobalt</td><td>8</td><td>35s</td><td>8</td><td>None</td></tr>
+        <tr><td>4</td><td>4</td><td style="color:var(--emeralite)">&#9679; Green</td><td>Emeralite</td><td>12</td><td>60s</td><td>6</td><td>25% &mdash; 5 dmg</td></tr>
+        <tr><td>5</td><td>5</td><td style="color:var(--aurium)">&#9679; Gold</td><td>Aurium</td><td>18</td><td>90s</td><td>6</td><td>35% &mdash; 8 dmg</td></tr>
+        <tr><td>6</td><td>6</td><td style="color:var(--voidstone)">&#9679; Purple</td><td>Voidstone</td><td>25</td><td>120s</td><td>5</td><td>45% &mdash; 12 dmg</td></tr>
+        <tr><td>7</td><td>Outer</td><td style="color:var(--cosmium)">&#9679; Red</td><td>Cosmium</td><td>35</td><td>180s</td><td>4</td><td>55% &mdash; 18 dmg</td></tr>
       </table>
-      <h4>Core Loop</h4>
-      <p>Mine Asteroid &rarr; Collect Ore &rarr; Refine into Bar &rarr; Spend Bars on Upgrades &rarr; Repeat</p>
-      <p>Tiers 4-7 have enemies (abstracted as danger chance per mining hit). Combat upgrades reduce danger. Death = lose carried ore.</p>
-      <h4>Multi-Bar Costs</h4>
-      <p>Early upgrades cost 1 bar type. Mid upgrades cost 2 types. Late upgrades cost 3 types. This keeps all tiers of mining relevant.</p>
-      <h4>Key Buildings</h4>
-      <p>Landing Pad, Refiners (x6), Refiner Speed, Thruster Dock, Drone Bay (auto-mines Tier 1-3), Auto-Collector (auto-collects bars), Armory (unlocks combat upgrades).</p>
+      <p>Destroyed asteroids respawn after 6-10 seconds. Players cannot mine asteroids above their pick's max tier ("Too tough!" feedback).</p>
+
+      <h3>Combat &amp; Danger System</h3>
+      <p>Tiers 4-7 have hostile enemies near the asteroids. In the Roblox version, these will be real-time enemies; in this prototype, combat is abstracted as a <b>danger chance per mining hit</b>.</p>
+      <ul>
+        <li>Each hit on a Tier 4+ asteroid rolls against the danger chance. If triggered, the player takes damage.</li>
+        <li><b>Shield absorbs damage first</b>, then HP. Shield regenerates after a delay when not taking damage.</li>
+        <li><b>Death (HP &le; 0):</b> Player loses all carried ore and is teleported back to the space port. HP resets to full.</li>
+        <li>Combat upgrades (Weapon Damage, Fire Rate) reduce the effective danger chance, making outer rings safer over time.</li>
+        <li>The <b>Armory</b> building must be purchased before any combat upgrades become available.</li>
+      </ul>
+
+      <h3>Multi-Bar Cost System</h3>
+      <p>This is a key design pillar. Upgrades cost <b>bars</b> (not ore), and costs escalate from single-bar to multi-bar as the player progresses:</p>
+      <table>
+        <tr><th>Progression Phase</th><th>Cost Pattern</th><th>Example</th></tr>
+        <tr><td>Early (Tier 1-2)</td><td>Single bar type</td><td>10 Iron</td></tr>
+        <tr><td>Mid (Tier 3-4)</td><td>Two bar types</td><td>8 Emeralite + 10 Cobalt</td></tr>
+        <tr><td>Late (Tier 5-7)</td><td>Three bar types</td><td>8 Voidstone + 8 Aurium + 12 Emeralite</td></tr>
+      </table>
+      <p><b>Why this matters:</b> Multi-bar costs keep all tiers of mining relevant throughout the game. A late-game player still needs Iron and Copper for certain upgrades, preventing lower tiers from becoming useless. It also creates interesting resource allocation decisions &mdash; do you mine Tier 3 for Cobalt or Tier 5 for Aurium when both are needed?</p>
+
+      <h3>Upgrades &mdash; Mining</h3>
+      <h4>Mining Pick (7 levels)</h4>
+      <p>Determines damage per hit and maximum tier you can mine. This is the primary progression gate.</p>
+      <table>
+        <tr><th>Lv</th><th>Name</th><th>Damage</th><th>Max Tier</th><th>Cost</th></tr>
+        <tr><td>1</td><td>Starter Pick</td><td>1</td><td>T1</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>Iron Pick</td><td>2</td><td>T1-2</td><td><span style="color:var(--iron)">10 Iron</span></td></tr>
+        <tr><td>3</td><td>Cobalt Pick</td><td>3</td><td>T1-3</td><td><span style="color:var(--copper)">12 Copper</span></td></tr>
+        <tr><td>4</td><td>Emeralite Pick</td><td>5</td><td>T1-4</td><td><span style="color:var(--cobalt)">14 Cobalt</span> + <span style="color:var(--copper)">10 Copper</span></td></tr>
+        <tr><td>5</td><td>Aurium Pick</td><td>8</td><td>T1-5</td><td><span style="color:var(--emeralite)">10 Emeralite</span> + <span style="color:var(--cobalt)">12 Cobalt</span></td></tr>
+        <tr><td>6</td><td>Void Pick</td><td>12</td><td>T1-6</td><td><span style="color:var(--aurium)">8 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span> + <span style="color:var(--cobalt)">15 Cobalt</span></td></tr>
+        <tr><td>7</td><td>Cosmic Pick</td><td>18</td><td>T1-7</td><td><span style="color:var(--voidstone)">8 Voidstone</span> + <span style="color:var(--aurium)">8 Aurium</span> + <span style="color:var(--emeralite)">12 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Movement Speed (7 levels)</h4>
+      <p>Increases travel speed between asteroids. In the Roblox version this affects flight speed; in the prototype this is a placeholder upgrade.</p>
+      <table>
+        <tr><th>Lv</th><th>Boost</th><th>Cost</th></tr>
+        <tr><td>1</td><td>Base</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>+10%</td><td><span style="color:var(--iron)">5 Iron</span></td></tr>
+        <tr><td>3</td><td>+20%</td><td><span style="color:var(--iron)">15 Iron</span></td></tr>
+        <tr><td>4</td><td>+35%</td><td><span style="color:var(--copper)">6 Copper</span></td></tr>
+        <tr><td>5</td><td>+50%</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>6</td><td>+75%</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>7</td><td>+100%</td><td><span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+      </table>
+
+      <h4>Ore Capacity (5 levels)</h4>
+      <p>How many pieces of ore you can carry at once before needing to return to the space port.</p>
+      <table>
+        <tr><th>Lv</th><th>Capacity</th><th>Cost</th></tr>
+        <tr><td>1</td><td>1 ore</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>2 ore</td><td><span style="color:var(--iron)">20 Iron</span></td></tr>
+        <tr><td>3</td><td>3 ore</td><td><span style="color:var(--copper)">9 Copper</span></td></tr>
+        <tr><td>4</td><td>5 ore</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>5</td><td>8 ore</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">12 Cobalt</span></td></tr>
+      </table>
+
+      <h3>Upgrades &mdash; Buildings</h3>
+      <p>Buildings are structures on or near the space port that provide passive benefits or unlock new mechanics.</p>
+
+      <h4>Landing Pad (4 levels)</h4>
+      <p>Improves ore drop-off convenience. Higher levels increase the radius at which you can deposit ore and eventually auto-sort ore into the correct refiners.</p>
+      <table>
+        <tr><th>Lv</th><th>Effect</th><th>Cost</th></tr>
+        <tr><td>1</td><td>Base drop-off range</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>+50% drop-off radius</td><td><span style="color:var(--iron)">20 Iron</span></td></tr>
+        <tr><td>3</td><td>+100% radius + speed boost</td><td><span style="color:var(--copper)">12 Copper</span></td></tr>
+        <tr><td>4</td><td>Auto-sort ore to refiners</td><td><span style="color:var(--cobalt)">10 Cobalt</span> + <span style="color:var(--copper)">8 Copper</span></td></tr>
+      </table>
+
+      <h4>Refiners (6 slots)</h4>
+      <p>Each refiner processes one ore at a time. Start with 1, unlock up to 6. More refiners = more parallel processing = faster bar production.</p>
+      <table>
+        <tr><th>Slot</th><th>Cost</th></tr>
+        <tr><td>1 (starter)</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td><span style="color:var(--iron)">25 Iron</span></td></tr>
+        <tr><td>3</td><td><span style="color:var(--copper)">12 Copper</span></td></tr>
+        <tr><td>4</td><td><span style="color:var(--cobalt)">8 Cobalt</span> + <span style="color:var(--copper)">10 Copper</span></td></tr>
+        <tr><td>5</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>6</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">15 Cobalt</span></td></tr>
+      </table>
+
+      <h4>Refiner Speed (5 levels)</h4>
+      <p>Multiplier on refine speed. All refiners benefit from this upgrade.</p>
+      <table>
+        <tr><th>Lv</th><th>Speed</th><th>Cost</th></tr>
+        <tr><td>1</td><td>1.0x</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>1.25x</td><td><span style="color:var(--iron)">30 Iron</span></td></tr>
+        <tr><td>3</td><td>1.5x</td><td><span style="color:var(--copper)">15 Copper</span></td></tr>
+        <tr><td>4</td><td>1.75x</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>5</td><td>2.0x</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Thruster Dock (5 levels)</h4>
+      <p>Upgrades the player's jetpack for better flight in the asteroid field.</p>
+      <table>
+        <tr><th>Lv</th><th>Effect</th><th>Cost</th></tr>
+        <tr><td>1</td><td>Basic jetpack</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>Faster flight speed</td><td><span style="color:var(--iron)">25 Iron</span></td></tr>
+        <tr><td>3</td><td>Dash ability</td><td><span style="color:var(--copper)">12 Copper</span></td></tr>
+        <tr><td>4</td><td>Longer boost duration</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>5</td><td>Double dash</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+      </table>
+
+      <h4>Drone Bay (4 levels)</h4>
+      <p>Drones passively mine low-tier asteroids and deposit ore into your refiners automatically. A key idle/AFK mechanic.</p>
+      <table>
+        <tr><th>Lv</th><th>Drones</th><th>Max Tier</th><th>Cost</th></tr>
+        <tr><td>0</td><td>None</td><td>&mdash;</td><td>&mdash;</td></tr>
+        <tr><td>1</td><td>1 drone</td><td>T1</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>2</td><td>2 drones</td><td>T1</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+        <tr><td>3</td><td>3 drones</td><td>T1-2</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--cobalt)">12 Cobalt</span></td></tr>
+        <tr><td>4</td><td>5 drones</td><td>T1-3</td><td><span style="color:var(--cosmium)">4 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Auto-Collector (2 levels)</h4>
+      <p>Automatically collects completed bars from refiners on a timer, so you don't have to manually click "Collect".</p>
+      <table>
+        <tr><th>Lv</th><th>Interval</th><th>Cost</th></tr>
+        <tr><td>0</td><td>Off</td><td>&mdash;</td></tr>
+        <tr><td>1</td><td>Every 30s</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>2</td><td>Every 15s</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Armory (1 level)</h4>
+      <p>A single purchase that unlocks the entire Combat upgrade tab. Must be built before any combat upgrades can be purchased.</p>
+      <p>Cost: <span style="color:var(--cobalt)">15 Cobalt</span></p>
+
+      <h3>Upgrades &mdash; Combat</h3>
+      <p>All combat upgrades require the Armory to be built first. These reduce effective danger chance and improve survivability in Tier 4+ rings.</p>
+
+      <h4>Weapon Damage (6 levels)</h4>
+      <p>Higher weapon damage reduces the effective danger chance per hit (each point reduces chance by 0.8%).</p>
+      <table>
+        <tr><th>Lv</th><th>Damage</th><th>Cost</th></tr>
+        <tr><td>1</td><td>5</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>8</td><td><span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>3</td><td>12</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>4</td><td>18</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+        <tr><td>5</td><td>25</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+        <tr><td>6</td><td>35</td><td><span style="color:var(--cosmium)">5 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">8 Aurium</span></td></tr>
+      </table>
+
+      <h4>Fire Rate (5 levels)</h4>
+      <p>Faster firing reduces effective danger chance (each level above 1.0x reduces chance by 5%).</p>
+      <table>
+        <tr><th>Lv</th><th>Rate</th><th>Cost</th></tr>
+        <tr><td>1</td><td>1.0x</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>1.5x</td><td><span style="color:var(--cobalt)">12 Cobalt</span></td></tr>
+        <tr><td>3</td><td>2.0x</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>4</td><td>2.5x</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+        <tr><td>5</td><td>3.0x</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">12 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Health (6 levels)</h4>
+      <table>
+        <tr><th>Lv</th><th>Max HP</th><th>Cost</th></tr>
+        <tr><td>1</td><td>50</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>75</td><td><span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>3</td><td>100</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>4</td><td>150</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>5</td><td>200</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+        <tr><td>6</td><td>300</td><td><span style="color:var(--cosmium)">4 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">8 Aurium</span></td></tr>
+      </table>
+
+      <h4>Shield (6 levels)</h4>
+      <p>Shield absorbs damage before HP. Regenerates after a delay when not taking damage.</p>
+      <table>
+        <tr><th>Lv</th><th>Max Shield</th><th>Cost</th></tr>
+        <tr><td>1</td><td>0 (none)</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>25</td><td><span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>3</td><td>50</td><td><span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+        <tr><td>4</td><td>75</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+        <tr><td>5</td><td>100</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+        <tr><td>6</td><td>150</td><td><span style="color:var(--cosmium)">5 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">8 Aurium</span></td></tr>
+      </table>
+
+      <h4>Shield Regen Delay (4 levels)</h4>
+      <p>How long after taking damage before shield starts regenerating.</p>
+      <table>
+        <tr><th>Lv</th><th>Delay</th><th>Cost</th></tr>
+        <tr><td>1</td><td>5 seconds</td><td>&mdash;</td></tr>
+        <tr><td>2</td><td>4 seconds</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>3</td><td>3 seconds</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>4</td><td>2 seconds</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+      </table>
+
+      <h3>Upgrades &mdash; Cosmetics</h3>
+      <p>Cosmetics are bar sinks that don't affect gameplay. They let players customize their space port and serve as progression trophies. In the Roblox version, these provide visible changes to the station. There are 6 cosmetic categories with a total of 50 items.</p>
+
+      <h4>Flooring (7 options)</h4>
+      <p>Changes the floor material/texture of the space port platform.</p>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>Metal Grate</td><td>Basic industrial grating</td><td>&mdash;</td></tr>
+        <tr><td>Steel Plating</td><td>Clean flat steel</td><td><span style="color:var(--iron)">15 Iron</span></td></tr>
+        <tr><td>Tile Floor</td><td>White/grey tiles</td><td><span style="color:var(--copper)">8 Copper</span></td></tr>
+        <tr><td>Glass Floor</td><td>See space below</td><td><span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Neon Grid</td><td>Glowing grid lines</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Holographic</td><td>Galaxy pattern</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>Gold Plating</td><td>Polished gold</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+      </table>
+
+      <h4>Walls (6 options)</h4>
+      <p>Barriers/railings around the station perimeter.</p>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>Chain Link</td><td>Basic fence</td><td>&mdash;</td></tr>
+        <tr><td>Pipe Railing</td><td>Industrial pipes</td><td><span style="color:var(--iron)">20 Iron</span></td></tr>
+        <tr><td>Glass Barrier</td><td>Transparent panels</td><td><span style="color:var(--copper)">10 Copper</span></td></tr>
+        <tr><td>Force Field</td><td>Energy barrier</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Holographic Wall</td><td>Blue panels</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>Crystal Wall</td><td>Crystal formations</td><td><span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--cobalt)">10 Cobalt</span></td></tr>
+      </table>
+
+      <h4>Lighting (6 options)</h4>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>Work Lights</td><td>Yellow floodlights</td><td>&mdash;</td></tr>
+        <tr><td>Strip Lights</td><td>White LED strips</td><td><span style="color:var(--iron)">25 Iron</span></td></tr>
+        <tr><td>Neon Tubes</td><td>Colored neon</td><td><span style="color:var(--copper)">12 Copper</span></td></tr>
+        <tr><td>Lanterns</td><td>Floating orb lights</td><td><span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Plasma Lamps</td><td>Energy globes</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Star Lights</td><td>Twinkling lights</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+      </table>
+
+      <h4>Furniture (14 items)</h4>
+      <p>Decorative objects placed inside the space port. These are collectible &mdash; each is a separate purchase, not a level upgrade.</p>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>Metal Bench</td><td>Simple seating</td><td><span style="color:var(--iron)">10 Iron</span></td></tr>
+        <tr><td>Supply Crates</td><td>Cargo boxes</td><td><span style="color:var(--iron)">20 Iron</span></td></tr>
+        <tr><td>Tool Rack</td><td>Wall-mounted tools</td><td><span style="color:var(--copper)">5 Copper</span></td></tr>
+        <tr><td>Workbench</td><td>Scattered parts</td><td><span style="color:var(--copper)">9 Copper</span></td></tr>
+        <tr><td>Vending Machine</td><td>Drink machine</td><td><span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Antenna Array</td><td>Spinning dish</td><td><span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Hologram Table</td><td>Field map display</td><td><span style="color:var(--emeralite)">5 Emeralite</span> + <span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Trophy Case</td><td>Achievement items</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Aquarium</td><td>Alien fish tank</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>Jukebox</td><td>Ambient music</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span></td></tr>
+        <tr><td>Statue &mdash; Miner</td><td>Bronze miner</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Fountain</td><td>Energy fountain</td><td><span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+        <tr><td>Command Chair</td><td>Captain's throne</td><td><span style="color:var(--cosmium)">4 Cosmium</span> + <span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">8 Aurium</span></td></tr>
+        <tr><td>AI Core</td><td>Brain in glass</td><td><span style="color:var(--cosmium)">6 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">10 Aurium</span></td></tr>
+      </table>
+
+      <h4>Exterior (10 items)</h4>
+      <p>Objects attached to the outside of the space port, visible to other players.</p>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>Flag Pole</td><td>Your flag</td><td><span style="color:var(--iron)">15 Iron</span></td></tr>
+        <tr><td>Signal Beacon</td><td>Flashing light</td><td><span style="color:var(--copper)">6 Copper</span></td></tr>
+        <tr><td>Solar Panels</td><td>Mounted panels</td><td><span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Satellite Dish</td><td>Rotating dish</td><td><span style="color:var(--emeralite)">5 Emeralite</span> + <span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Docking Ring</td><td>Ship dock</td><td><span style="color:var(--emeralite)">6 Emeralite</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Defense Turret</td><td>Gun emplacement</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>Billboard</td><td>Player name sign</td><td><span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--emeralite)">8 Emeralite</span> + <span style="color:var(--cobalt)">12 Cobalt</span></td></tr>
+        <tr><td>Shield Generator</td><td>Bubble shield</td><td><span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">10 Emeralite</span></td></tr>
+        <tr><td>Warp Gate</td><td>Decorative portal</td><td><span style="color:var(--voidstone)">6 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span> + <span style="color:var(--cobalt)">15 Cobalt</span></td></tr>
+        <tr><td>Golden Statue</td><td>Gold miner statue</td><td><span style="color:var(--cosmium)">5 Cosmium</span> + <span style="color:var(--voidstone)">5 Voidstone</span> + <span style="color:var(--aurium)">10 Aurium</span></td></tr>
+      </table>
+
+      <h4>Ambient (7 options)</h4>
+      <p>Background particle effects/mood around the space port.</p>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Cost</th></tr>
+        <tr><td>None</td><td>Default</td><td>&mdash;</td></tr>
+        <tr><td>Sparks</td><td>Welding sparks</td><td><span style="color:var(--iron)">20 Iron</span></td></tr>
+        <tr><td>Steam Vents</td><td>Hissing steam</td><td><span style="color:var(--copper)">10 Copper</span></td></tr>
+        <tr><td>Fireflies</td><td>Glowing dots</td><td><span style="color:var(--emeralite)">5 Emeralite</span> + <span style="color:var(--cobalt)">6 Cobalt</span></td></tr>
+        <tr><td>Aurora</td><td>Northern lights</td><td><span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--emeralite)">6 Emeralite</span></td></tr>
+        <tr><td>Void Mist</td><td>Purple fog</td><td><span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">5 Aurium</span> + <span style="color:var(--cobalt)">8 Cobalt</span></td></tr>
+        <tr><td>Cosmic Rain</td><td>Falling stardust</td><td><span style="color:var(--cosmium)">4 Cosmium</span> + <span style="color:var(--voidstone)">4 Voidstone</span> + <span style="color:var(--aurium)">6 Aurium</span></td></tr>
+      </table>
+
+      <h3>Economy &amp; Progression Pacing</h3>
+      <h4>Intended Progression Timeline</h4>
+      <table>
+        <tr><th>Time</th><th>Milestone</th></tr>
+        <tr><td>0-2 min</td><td>Mine first Iron asteroid, refine first bar, buy Iron Pick</td></tr>
+        <tr><td>2-5 min</td><td>Mining Tier 2 (Copper), buying first building upgrades</td></tr>
+        <tr><td>5-10 min</td><td>Unlock Tier 3 (Cobalt), add 2nd refiner, capacity upgrades</td></tr>
+        <tr><td>10-15 min</td><td>Build Armory, enter danger zone (Tier 4). First deaths likely.</td></tr>
+        <tr><td>15-25 min</td><td>Combat upgrades, drones online, Tier 5 (Aurium) accessible</td></tr>
+        <tr><td>25-40 min</td><td>Tier 6 (Voidstone), auto-collector active, cosmetic purchases begin</td></tr>
+        <tr><td>40-60 min</td><td>Tier 7 (Cosmium), endgame cosmetics, maxing remaining upgrades</td></tr>
+      </table>
+
+      <h4>Design Principles</h4>
+      <ul>
+        <li><b>No wasted tiers:</b> Multi-bar costs ensure every ore type stays relevant. Players never "outgrow" a ring entirely.</li>
+        <li><b>Clear gates:</b> Pick level is the hard gate. You literally cannot damage higher-tier asteroids without the right pick.</li>
+        <li><b>Risk/reward:</b> Outer rings are more efficient per bar but dangerous. Players choose safety vs. speed.</li>
+        <li><b>Idle-friendly:</b> Drones + auto-collector mean AFK players still progress, but active players progress faster.</li>
+        <li><b>Visible progression:</b> Cosmetics + station upgrades give visible markers of progress to other players (important for Roblox social dynamics).</li>
+        <li><b>Session flexibility:</b> Save system + offline progress means players can leave and return without losing momentum.</li>
+      </ul>
+
+      <h3>Roblox Implementation Notes</h3>
+      <p>This prototype abstracts several systems that will be fully realized in Roblox Studio:</p>
+      <ul>
+        <li><b>Movement:</b> 3D flight with jetpack physics, not click-to-mine. Speed/thruster upgrades will feel tangible.</li>
+        <li><b>Combat:</b> Real-time enemies patrolling outer rings. Weapon/shield upgrades affect actual combat mechanics.</li>
+        <li><b>Multiplayer:</b> Each player has their own space port on a shared asteroid field. Players can see each other's cosmetic upgrades.</li>
+        <li><b>Cosmetics:</b> Full 3D models placed in/on the space port, visible to all players.</li>
+        <li><b>Sound/VFX:</b> Mining impacts, refiner hums, danger alerts, ambient space audio.</li>
+      </ul>
     </div>
   </details>
 </div>
