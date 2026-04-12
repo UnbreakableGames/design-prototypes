@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Space Miner Idle</title>
+<style>
+:root {
+  --bg: #0a0e1a; --panel: #141824; --border: #2a3050; --text: #e0e0e0; --dim: #6a7090;
+  --accent: #4a9eff;
+  --iron: #8a8a8a; --copper: #b87333; --cobalt: #4169e1; --emeralite: #50c878;
+  --aurium: #ffd700; --voidstone: #9b59b6; --cosmium: #dc143c;
+  --hp: #44ff44; --shield-c: #44aaff; --danger: #ff4444;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+#app { max-width: 1100px; margin: 0 auto; padding: 8px; }
+
+/* HUD */
+#hud { display: flex; align-items: center; gap: 16px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+#hud h1 { font-size: 16px; color: var(--accent); white-space: nowrap; }
+.hud-stat { font-size: 13px; color: var(--dim); white-space: nowrap; }
+.hud-stat b { color: var(--text); }
+.bar-display { display: flex; align-items: center; gap: 4px; }
+.bar-track { width: 80px; height: 10px; background: #1a1e2e; border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px; transition: width 0.2s; }
+.bar-fill.hp { background: var(--hp); }
+.bar-fill.shield { background: var(--shield-c); }
+.hud-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.btn-sm { padding: 3px 8px; font-size: 11px; background: var(--panel); border: 1px solid var(--border); color: var(--dim); border-radius: 4px; cursor: pointer; }
+.btn-sm:hover { color: var(--text); border-color: var(--accent); }
+
+/* Main layout */
+#main { display: flex; gap: 8px; margin-bottom: 6px; }
+#sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+#field-wrap { flex: 1; min-width: 0; }
+canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; cursor: crosshair; }
+#field-wrap { display: flex; justify-content: center; }
+
+/* Sidebar panels */
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 8px; }
+.inv-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
+.inv-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.inv-count { margin-left: auto; font-weight: 600; }
+
+/* Refiners */
+.refiner { margin-bottom: 6px; }
+.refiner-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+.refiner-track { width: 100%; height: 8px; background: #1a1e2e; border-radius: 4px; overflow: hidden; }
+.refiner-fill { height: 100%; border-radius: 4px; transition: width 0.15s linear; }
+.refiner-status { font-size: 11px; margin-top: 2px; }
+.refiner-collect { font-size: 11px; padding: 2px 8px; margin-top: 2px; background: #1a3a1a; border: 1px solid var(--hp); color: var(--hp); border-radius: 4px; cursor: pointer; }
+.refiner-collect:hover { background: #2a4a2a; }
+
+/* Log */
+#log { font-size: 11px; max-height: 100px; overflow-y: auto; }
+#log div { padding: 1px 0; border-bottom: 1px solid #1a1e2e; }
+
+/* Deposit button */
+.btn-deposit { width: 100%; padding: 8px; font-size: 13px; font-weight: 600; background: #1a2a3a; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; margin-top: 4px; }
+.btn-deposit:hover { background: #2a3a4a; }
+.btn-deposit:disabled { opacity: 0.3; cursor: default; }
+
+/* Upgrades */
+#upgrades { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.tab { padding: 6px 14px; font-size: 12px; background: transparent; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; cursor: pointer; }
+.tab.active { background: var(--border); color: var(--text); border-color: var(--accent); }
+.tab:hover { color: var(--text); }
+#upgrade-content { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 300px; overflow-y: auto; }
+.upgrade-card { background: #1a1e2e; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.upgrade-card.maxed { border-color: var(--hp); opacity: 0.7; }
+.upgrade-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.upgrade-effect { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+.upgrade-cost { font-size: 12px; margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.cost-item { display: inline-flex; align-items: center; gap: 3px; }
+.cost-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.cost-insufficient { color: var(--danger) !important; }
+.btn-buy { padding: 4px 12px; font-size: 12px; font-weight: 600; background: #1a2a3a; border: 1px solid var(--accent); color: var(--accent); border-radius: 4px; cursor: pointer; }
+.btn-buy:hover { background: #2a3a4a; }
+.btn-buy:disabled { opacity: 0.3; cursor: default; border-color: var(--dim); color: var(--dim); }
+.btn-buy.locked { border-color: var(--danger); color: var(--danger); }
+.maxed-label { font-size: 12px; color: var(--hp); font-weight: 600; }
+
+/* Design doc */
+#design-doc { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+#design-doc summary { padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--dim); }
+#design-doc summary:hover { color: var(--text); }
+#design-doc .doc-content { padding: 14px; font-size: 13px; line-height: 1.6; max-height: 500px; overflow-y: auto; }
+#design-doc table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+#design-doc th, #design-doc td { padding: 4px 8px; border: 1px solid var(--border); text-align: left; }
+#design-doc th { background: #1a1e2e; color: var(--dim); }
+#design-doc h4 { color: var(--accent); margin: 12px 0 6px; }
+
+/* Instructions */
+#instructions { text-align: center; padding: 4px; font-size: 12px; color: var(--dim); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  #main { flex-direction: column; }
+  #sidebar { width: 100%; }
+  #upgrade-content { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <h1>SPACE MINER IDLE</h1>
+    <span class="hud-stat">Time: <b id="hud-time">00:00</b></span>
+    <span class="hud-stat">Carrying: <b id="hud-carry">0/1</b></span>
+    <span class="hud-stat bar-display">HP: <span class="bar-track"><span class="bar-fill hp" id="hud-hp-bar"></span></span> <b id="hud-hp-text">50/50</b></span>
+    <span class="hud-stat bar-display" id="hud-shield-wrap" style="display:none">Shield: <span class="bar-track"><span class="bar-fill shield" id="hud-shield-bar"></span></span> <b id="hud-shield-text">0/0</b></span>
+    <span class="hud-right">
+      <button class="btn-sm" onclick="saveGame()">Save</button>
+      <button class="btn-sm" onclick="resetGame()">Reset</button>
+    </span>
+  </div>
+
+  <div id="instructions">Click asteroids to mine. Click dropped ore to pick up. Click the station (center) to deposit ore into refiners.</div>
+
+  <div id="main">
+    <div id="sidebar">
+      <div class="panel" id="inventory-panel">
+        <h3>Bar Inventory</h3>
+        <div id="inventory"></div>
+      </div>
+      <div class="panel">
+        <h3>Refiners</h3>
+        <div id="refiners"></div>
+        <button class="btn-deposit" id="btn-deposit" onclick="depositOre()" disabled>Deposit Ore</button>
+      </div>
+      <div class="panel">
+        <h3>Status</h3>
+        <div id="drone-status" style="font-size:12px;color:var(--dim);margin-bottom:6px"></div>
+        <div id="autocollect-status" style="font-size:12px;color:var(--dim);margin-bottom:6px"></div>
+      </div>
+      <div class="panel">
+        <h3>Log</h3>
+        <div id="log"></div>
+      </div>
+    </div>
+    <div id="field-wrap">
+      <canvas id="field" width="700" height="700"></canvas>
+    </div>
+  </div>
+
+  <div id="upgrades">
+    <div class="tabs" id="upgrade-tabs"></div>
+    <div id="upgrade-content"></div>
+  </div>
+
+  <details id="design-doc">
+    <summary>Design Document Reference (click to expand)</summary>
+    <div class="doc-content">
+      <h4>Ore & Asteroid Tiers</h4>
+      <table>
+        <tr><th>Tier</th><th>Color</th><th>Ore</th><th>Hits</th><th>Refine</th><th>Enemies?</th></tr>
+        <tr><td>1</td><td style="color:var(--iron)">Grey</td><td>Iron</td><td>3</td><td>10s</td><td>No</td></tr>
+        <tr><td>2</td><td style="color:var(--copper)">Copper</td><td>Copper</td><td>5</td><td>20s</td><td>No</td></tr>
+        <tr><td>3</td><td style="color:var(--cobalt)">Blue</td><td>Cobalt</td><td>8</td><td>35s</td><td>No</td></tr>
+        <tr><td>4</td><td style="color:var(--emeralite)">Green</td><td>Emeralite</td><td>12</td><td>60s</td><td>Yes</td></tr>
+        <tr><td>5</td><td style="color:var(--aurium)">Gold</td><td>Aurium</td><td>18</td><td>90s</td><td>Yes</td></tr>
+        <tr><td>6</td><td style="color:var(--voidstone)">Purple</td><td>Voidstone</td><td>25</td><td>120s</td><td>Yes</td></tr>
+        <tr><td>7</td><td style="color:var(--cosmium)">Red</td><td>Cosmium</td><td>35</td><td>180s</td><td>Yes</td></tr>
+      </table>
+      <h4>Core Loop</h4>
+      <p>Mine Asteroid &rarr; Collect Ore &rarr; Refine into Bar &rarr; Spend Bars on Upgrades &rarr; Repeat</p>
+      <p>Tiers 4-7 have enemies (abstracted as danger chance per mining hit). Combat upgrades reduce danger. Death = lose carried ore.</p>
+      <h4>Multi-Bar Costs</h4>
+      <p>Early upgrades cost 1 bar type. Mid upgrades cost 2 types. Late upgrades cost 3 types. This keeps all tiers of mining relevant.</p>
+      <h4>Key Buildings</h4>
+      <p>Landing Pad, Refiners (x6), Refiner Speed, Thruster Dock, Drone Bay (auto-mines Tier 1-3), Auto-Collector (auto-collects bars), Armory (unlocks combat upgrades).</p>
+    </div>
+  </details>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURATION
+// ═══════════════════════════════════════════════════════════
+
+const TIER_KEYS = ['iron','copper','cobalt','emeralite','aurium','voidstone','cosmium'];
+const TIER_NAMES = ['Iron','Copper','Cobalt','Emeralite','Aurium','Voidstone','Cosmium'];
+const TIER_COLORS = ['#8a8a8a','#b87333','#4169e1','#50c878','#ffd700','#9b59b6','#dc143c'];
+const TIER_HITS = [3, 5, 8, 12, 18, 25, 35];
+const TIER_REFINE_TIME = [10, 20, 35, 60, 90, 120, 180];
+const TIER_DANGER = [0, 0, 0, 0.25, 0.35, 0.45, 0.55];
+const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
+
+const RING_COUNTS = [8, 8, 8, 6, 6, 5, 4];
+const RING_RADII = [70, 115, 160, 210, 255, 295, 330];
+const ASTEROID_SIZES = [12, 13, 14, 15, 16, 17, 18];
+
+const UPGRADES = {
+  pick: [
+    { name: 'Starter Pick', damage: 1, maxTier: 1, cost: {} },
+    { name: 'Iron Pick', damage: 2, maxTier: 2, cost: { iron: 10 } },
+    { name: 'Cobalt Pick', damage: 3, maxTier: 3, cost: { copper: 12 } },
+    { name: 'Emeralite Pick', damage: 5, maxTier: 4, cost: { cobalt: 14, copper: 10 } },
+    { name: 'Aurium Pick', damage: 8, maxTier: 5, cost: { emeralite: 10, cobalt: 12 } },
+    { name: 'Void Pick', damage: 12, maxTier: 6, cost: { aurium: 8, emeralite: 10, cobalt: 15 } },
+    { name: 'Cosmic Pick', damage: 18, maxTier: 7, cost: { voidstone: 8, aurium: 8, emeralite: 12 } },
+  ],
+  speed: [
+    { boost: 0, cost: {} },
+    { boost: 10, cost: { iron: 5 } },
+    { boost: 20, cost: { iron: 15 } },
+    { boost: 35, cost: { copper: 6 } },
+    { boost: 50, cost: { emeralite: 6, cobalt: 8 } },
+    { boost: 75, cost: { aurium: 5, emeralite: 6 } },
+    { boost: 100, cost: { voidstone: 4, aurium: 5, cobalt: 10 } },
+  ],
+  capacity: [
+    { capacity: 1, cost: {} },
+    { capacity: 2, cost: { iron: 20 } },
+    { capacity: 3, cost: { copper: 9 } },
+    { capacity: 5, cost: { emeralite: 6, cobalt: 8 } },
+    { capacity: 8, cost: { aurium: 5, emeralite: 6, cobalt: 12 } },
+  ],
+  landingPad: [
+    { effect: 'Base drop-off range', cost: {} },
+    { effect: '+50% drop-off radius', cost: { iron: 20 } },
+    { effect: '+100% radius + speed boost', cost: { copper: 12 } },
+    { effect: 'Auto-sort ore to refiners', cost: { cobalt: 10, copper: 8 } },
+  ],
+  refiners: [
+    { cost: {} },
+    { cost: { iron: 25 } },
+    { cost: { copper: 12 } },
+    { cost: { cobalt: 8, copper: 10 } },
+    { cost: { emeralite: 8, cobalt: 10 } },
+    { cost: { aurium: 6, emeralite: 8, cobalt: 15 } },
+  ],
+  refinerSpeed: [
+    { mult: 1.0, cost: {} },
+    { mult: 1.25, cost: { iron: 30 } },
+    { mult: 1.5, cost: { copper: 15 } },
+    { mult: 1.75, cost: { emeralite: 8, cobalt: 10 } },
+    { mult: 2.0, cost: { aurium: 6, emeralite: 8 } },
+  ],
+  thrusterDock: [
+    { effect: 'Basic jetpack', cost: {} },
+    { effect: 'Faster flight speed', cost: { iron: 25 } },
+    { effect: 'Dash ability', cost: { copper: 12 } },
+    { effect: 'Longer boost duration', cost: { emeralite: 6, cobalt: 8 } },
+    { effect: 'Double dash', cost: { aurium: 5, emeralite: 6, cobalt: 10 } },
+  ],
+  droneBay: [
+    { drones: 0, maxTier: 0, cost: {} },
+    { drones: 1, maxTier: 1, cost: { emeralite: 8, cobalt: 10 } },
+    { drones: 2, maxTier: 1, cost: { aurium: 6, emeralite: 8 } },
+    { drones: 3, maxTier: 2, cost: { voidstone: 5, aurium: 6, cobalt: 12 } },
+    { drones: 5, maxTier: 3, cost: { cosmium: 4, voidstone: 5, emeralite: 10 } },
+  ],
+  autoCollector: [
+    { interval: 0, cost: {} },
+    { interval: 30, cost: { emeralite: 8, cobalt: 10 } },
+    { interval: 15, cost: { aurium: 6, emeralite: 8 } },
+  ],
+  armory: { cost: { cobalt: 15 } },
+  weaponDmg: [
+    { damage: 5, cost: {} },
+    { damage: 8, cost: { cobalt: 10 } },
+    { damage: 12, cost: { emeralite: 8, cobalt: 10 } },
+    { damage: 18, cost: { aurium: 6, emeralite: 8 } },
+    { damage: 25, cost: { voidstone: 5, aurium: 6, emeralite: 10 } },
+    { damage: 35, cost: { cosmium: 5, voidstone: 5, aurium: 8 } },
+  ],
+  fireRate: [
+    { rate: 1.0, cost: {} },
+    { rate: 1.5, cost: { cobalt: 12 } },
+    { rate: 2.0, cost: { emeralite: 8, cobalt: 10 } },
+    { rate: 2.5, cost: { aurium: 6, emeralite: 8 } },
+    { rate: 3.0, cost: { voidstone: 5, aurium: 6, emeralite: 12 } },
+  ],
+  health: [
+    { hp: 50, cost: {} },
+    { hp: 75, cost: { cobalt: 8 } },
+    { hp: 100, cost: { emeralite: 6, cobalt: 8 } },
+    { hp: 150, cost: { aurium: 5, emeralite: 6 } },
+    { hp: 200, cost: { voidstone: 5, aurium: 5, emeralite: 10 } },
+    { hp: 300, cost: { cosmium: 4, voidstone: 5, aurium: 8 } },
+  ],
+  shield: [
+    { shield: 0, cost: {} },
+    { shield: 25, cost: { cobalt: 10 } },
+    { shield: 50, cost: { emeralite: 8, cobalt: 10 } },
+    { shield: 75, cost: { aurium: 6, emeralite: 8 } },
+    { shield: 100, cost: { voidstone: 5, aurium: 6, emeralite: 10 } },
+    { shield: 150, cost: { cosmium: 5, voidstone: 5, aurium: 8 } },
+  ],
+  shieldRegen: [
+    { delay: 5, cost: {} },
+    { delay: 4, cost: { emeralite: 6, cobalt: 8 } },
+    { delay: 3, cost: { aurium: 5, emeralite: 6 } },
+    { delay: 2, cost: { voidstone: 5, aurium: 5, emeralite: 10 } },
+  ],
+};
+
+const COSMETICS = {
+  flooring: [
+    { name: 'Metal Grate', desc: 'Basic industrial grating', cost: {} },
+    { name: 'Steel Plating', desc: 'Clean flat steel', cost: { iron: 15 } },
+    { name: 'Tile Floor', desc: 'White/grey tiles', cost: { copper: 8 } },
+    { name: 'Glass Floor', desc: 'See space below', cost: { cobalt: 6 } },
+    { name: 'Neon Grid', desc: 'Glowing grid lines', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Holographic', desc: 'Galaxy pattern', cost: { aurium: 5, emeralite: 6 } },
+    { name: 'Gold Plating', desc: 'Polished gold', cost: { voidstone: 5, aurium: 5, cobalt: 8 } },
+  ],
+  walls: [
+    { name: 'Chain Link', desc: 'Basic fence', cost: {} },
+    { name: 'Pipe Railing', desc: 'Industrial pipes', cost: { iron: 20 } },
+    { name: 'Glass Barrier', desc: 'Transparent panels', cost: { copper: 10 } },
+    { name: 'Force Field', desc: 'Energy barrier', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Holographic Wall', desc: 'Blue panels', cost: { aurium: 5, emeralite: 6 } },
+    { name: 'Crystal Wall', desc: 'Crystal formations', cost: { voidstone: 4, aurium: 5, cobalt: 10 } },
+  ],
+  lighting: [
+    { name: 'Work Lights', desc: 'Yellow floodlights', cost: {} },
+    { name: 'Strip Lights', desc: 'White LED strips', cost: { iron: 25 } },
+    { name: 'Neon Tubes', desc: 'Colored neon', cost: { copper: 12 } },
+    { name: 'Lanterns', desc: 'Floating orb lights', cost: { cobalt: 6 } },
+    { name: 'Plasma Lamps', desc: 'Energy globes', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Star Lights', desc: 'Twinkling lights', cost: { aurium: 5, emeralite: 6 } },
+  ],
+  furniture: [
+    { name: 'Metal Bench', desc: 'Simple seating', cost: { iron: 10 } },
+    { name: 'Supply Crates', desc: 'Cargo boxes', cost: { iron: 20 } },
+    { name: 'Tool Rack', desc: 'Wall-mounted tools', cost: { copper: 5 } },
+    { name: 'Workbench', desc: 'Scattered parts', cost: { copper: 9 } },
+    { name: 'Vending Machine', desc: 'Drink machine', cost: { cobalt: 6 } },
+    { name: 'Antenna Array', desc: 'Spinning dish', cost: { cobalt: 8 } },
+    { name: 'Hologram Table', desc: 'Field map display', cost: { emeralite: 5, cobalt: 6 } },
+    { name: 'Trophy Case', desc: 'Achievement items', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Aquarium', desc: 'Alien fish tank', cost: { aurium: 5, emeralite: 6 } },
+    { name: 'Jukebox', desc: 'Ambient music', cost: { aurium: 6, emeralite: 8 } },
+    { name: 'Statue - Miner', desc: 'Bronze miner', cost: { voidstone: 5, aurium: 5, cobalt: 8 } },
+    { name: 'Fountain', desc: 'Energy fountain', cost: { voidstone: 4, aurium: 5, emeralite: 10 } },
+    { name: 'Command Chair', desc: "Captain's throne", cost: { cosmium: 4, voidstone: 4, aurium: 8 } },
+    { name: 'AI Core', desc: 'Brain in glass', cost: { cosmium: 6, voidstone: 5, aurium: 10 } },
+  ],
+  exterior: [
+    { name: 'Flag Pole', desc: 'Your flag', cost: { iron: 15 } },
+    { name: 'Signal Beacon', desc: 'Flashing light', cost: { copper: 6 } },
+    { name: 'Solar Panels', desc: 'Mounted panels', cost: { cobalt: 6 } },
+    { name: 'Satellite Dish', desc: 'Rotating dish', cost: { emeralite: 5, cobalt: 6 } },
+    { name: 'Docking Ring', desc: 'Ship dock', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Defense Turret', desc: 'Gun emplacement', cost: { aurium: 5, emeralite: 6 } },
+    { name: 'Billboard', desc: 'Player name sign', cost: { aurium: 6, emeralite: 8, cobalt: 12 } },
+    { name: 'Space Garden', desc: 'Alien biodome', cost: { voidstone: 5, aurium: 5, emeralite: 10 } },
+    { name: 'Observation Deck', desc: 'Glass lookout', cost: { cosmium: 4, voidstone: 4, aurium: 8 } },
+    { name: 'Mega Antenna', desc: 'Huge tower', cost: { cosmium: 6, voidstone: 6, aurium: 10 } },
+  ],
+  ambient: [
+    { name: 'Steam Vents', desc: 'Steam puffs', cost: { iron: 30 } },
+    { name: 'Sparking Wires', desc: 'Wires that spark', cost: { copper: 9 } },
+    { name: 'Floating Debris', desc: 'Orbiting rocks', cost: { cobalt: 6 } },
+    { name: 'Energy Field', desc: 'Shield shimmer', cost: { emeralite: 6, cobalt: 8 } },
+    { name: 'Asteroid Ring', desc: 'Orbiting asteroids', cost: { aurium: 5, emeralite: 6 } },
+    { name: 'Nebula Cloud', desc: 'Colored gas', cost: { voidstone: 4, aurium: 5, cobalt: 10 } },
+    { name: 'Star Aura', desc: 'Starlight glow', cost: { cosmium: 4, voidstone: 4, emeralite: 8 } },
+  ],
+};
+
+// ═══════════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════════
+
+function defaultState() {
+  return {
+    bars: { iron: 0, copper: 0, cobalt: 0, emeralite: 0, aurium: 0, voidstone: 0, cosmium: 0 },
+    upgrades: {
+      pick: 0, speed: 0, capacity: 0,
+      landingPad: 0, refinerCount: 0, refinerSpeed: 0, thrusterDock: 0,
+      droneBay: 0, autoCollector: 0, armory: 0,
+      weaponDmg: 0, fireRate: 0, health: 0, shield: 0, shieldRegen: 0,
+    },
+    cosmetics: {
+      flooring: [true,false,false,false,false,false,false],
+      walls: [true,false,false,false,false,false],
+      lighting: [true,false,false,false,false,false],
+      furniture: new Array(14).fill(false),
+      exterior: new Array(10).fill(false),
+      ambient: new Array(7).fill(false),
+    },
+    refiners: [{ ore: null, progress: 0 }],
+    carrying: [],
+    hp: 50,
+    timePlayed: 0,
+    lastSaveTime: Date.now(),
+    lastDamageTime: 0,
+  };
+}
+
+let state = defaultState();
+
+// Transient (not saved)
+let asteroids = [];
+let particles = [];
+let floatingTexts = [];
+let stars = [];
+let gameLog = [];
+let activeTab = 'mining';
+let droneTimer = 0;
+let autoCollectTimer = 0;
+let saveTimer = 0;
+let uiTimer = 0;
+let lastFrameTime = 0;
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function getPickDamage() { return UPGRADES.pick[state.upgrades.pick].damage; }
+function getMaxTier() { return UPGRADES.pick[state.upgrades.pick].maxTier; }
+function getCapacity() { return UPGRADES.capacity[state.upgrades.capacity].capacity; }
+function getRefinerCount() { return state.upgrades.refinerCount + 1; }
+function getRefinerSpeedMult() { return UPGRADES.refinerSpeed[state.upgrades.refinerSpeed].mult; }
+function getMaxHp() { return UPGRADES.health[state.upgrades.health].hp; }
+function getMaxShield() { return UPGRADES.shield[state.upgrades.shield].shield; }
+function getShieldRegenDelay() { return UPGRADES.shieldRegen[state.upgrades.shieldRegen].delay; }
+function getDroneCount() { return UPGRADES.droneBay[state.upgrades.droneBay].drones; }
+function getDroneMaxTier() { return UPGRADES.droneBay[state.upgrades.droneBay].maxTier; }
+function getAutoCollectInterval() { return UPGRADES.autoCollector[state.upgrades.autoCollector].interval; }
+function getWeaponDmg() { return UPGRADES.weaponDmg[state.upgrades.weaponDmg].damage; }
+function getFireRate() { return UPGRADES.fireRate[state.upgrades.fireRate].rate; }
+function getCurrentShield() {
+  const max = getMaxShield();
+  if (!state.currentShield && state.currentShield !== 0) state.currentShield = max;
+  return Math.min(state.currentShield || 0, max);
+}
+
+function canAfford(cost) {
+  for (const [key, amount] of Object.entries(cost)) {
+    if ((state.bars[key] || 0) < amount) return false;
+  }
+  return true;
+}
+
+function deductCost(cost) {
+  for (const [key, amount] of Object.entries(cost)) {
+    state.bars[key] -= amount;
+  }
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function formatCostHTML(cost, checkAfford = true) {
+  if (!cost || Object.keys(cost).length === 0) return '<span style="color:var(--hp)">Free</span>';
+  return Object.entries(cost).map(([key, amount]) => {
+    const idx = TIER_KEYS.indexOf(key);
+    const color = TIER_COLORS[idx];
+    const has = state.bars[key] || 0;
+    const insufficient = checkAfford && has < amount;
+    return `<span class="cost-item ${insufficient ? 'cost-insufficient' : ''}" style="color:${insufficient ? 'var(--danger)' : color}"><span class="cost-dot" style="background:${color}"></span>${amount} ${TIER_NAMES[idx]}</span>`;
+  }).join(' ');
+}
+
+function addLog(text, color = '#e0e0e0') {
+  gameLog.unshift({ text, color, time: state.timePlayed });
+  if (gameLog.length > 20) gameLog.pop();
+}
+
+function addFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 1.5, vy: -40 });
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 30 + Math.random() * 70;
+    particles.push({
+      x, y, color,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 0.4 + Math.random() * 0.4, size: 1 + Math.random() * 3,
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CANVAS - ASTEROID FIELD
+// ═══════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+const CW = 700, CH = 700, CX = 350, CY = 350;
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({ x: Math.random() * CW, y: Math.random() * CH, size: 0.5 + Math.random() * 1.5, b: 0.3 + Math.random() * 0.7 });
+  }
+}
+
+function generateShape(numVerts, baseRadius) {
+  const verts = [];
+  for (let i = 0; i < numVerts; i++) {
+    const angle = (i / numVerts) * Math.PI * 2;
+    const r = baseRadius * (0.75 + Math.random() * 0.25);
+    verts.push({ angle, r });
+  }
+  return verts;
+}
+
+function initAsteroids() {
+  asteroids = [];
+  for (let tier = 0; tier < 7; tier++) {
+    const count = RING_COUNTS[tier];
+    const ringR = RING_RADII[tier];
+    const size = ASTEROID_SIZES[tier];
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (tier * 0.3);
+      const jitter = (Math.random() - 0.5) * 0.15;
+      const a = angle + jitter;
+      asteroids.push({
+        tier, x: CX + Math.cos(a) * ringR, y: CY + Math.sin(a) * ringR,
+        baseRadius: size, hitsLeft: TIER_HITS[tier], maxHits: TIER_HITS[tier],
+        alive: true, respawnTimer: 0, hasOre: false,
+        shape: generateShape(8 + Math.floor(Math.random() * 4), size),
+        flashTimer: 0,
+      });
+    }
+  }
+}
+
+function drawField() {
+  ctx.clearRect(0, 0, CW, CH);
+
+  // Stars
+  for (const s of stars) {
+    ctx.globalAlpha = s.b * (0.7 + 0.3 * Math.sin(Date.now() / 1000 + s.x));
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ring guides
+  for (let t = 0; t < 7; t++) {
+    ctx.beginPath();
+    ctx.arc(CX, CY, RING_RADII[t], 0, Math.PI * 2);
+    if (t >= 3) {
+      ctx.strokeStyle = `rgba(255, 68, 68, ${0.08 + 0.02 * (t - 3)})`;
+      ctx.lineWidth = 12;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 68, 68, 0.15)`;
+      ctx.lineWidth = 1;
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+    }
+    ctx.stroke();
+  }
+
+  // Tier labels
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  for (let t = 0; t < 7; t++) {
+    const locked = t + 1 > getMaxTier();
+    ctx.fillStyle = locked ? 'rgba(255,255,255,0.15)' : TIER_COLORS[t];
+    ctx.fillText(`T${t+1}`, CX + RING_RADII[t] - 8, CY - RING_RADII[t] + 14);
+  }
+
+  // Station
+  drawStation();
+
+  // Asteroids
+  for (const a of asteroids) {
+    if (a.alive) drawAsteroid(a);
+    else if (a.hasOre) drawOre(a);
+    else if (a.respawnTimer > 0) {
+      // Ghost outline showing respawn
+      const alpha = 0.1 * (1 - a.respawnTimer / 8);
+      if (alpha > 0) {
+        ctx.globalAlpha = alpha;
+        drawAsteroidShape(a, a.baseRadius, TIER_COLORS[a.tier]);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / 0.8;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Floating texts
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 13px monospace';
+  for (const ft of floatingTexts) {
+    ctx.globalAlpha = Math.min(1, ft.life / 0.4);
+    ctx.fillStyle = ft.color;
+    ctx.fillText(ft.text, ft.x, ft.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawStation() {
+  const hasOre = state.carrying.length > 0;
+  // Glow if carrying ore
+  if (hasOre) {
+    ctx.beginPath();
+    ctx.arc(CX, CY, 30, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(74, 158, 255, ${0.15 + 0.05 * Math.sin(Date.now() / 300)})`;
+    ctx.fill();
+  }
+  // Hexagon
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+    const r = 20;
+    if (i === 0) ctx.moveTo(CX + Math.cos(a) * r, CY + Math.sin(a) * r);
+    else ctx.lineTo(CX + Math.cos(a) * r, CY + Math.sin(a) * r);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#1a2a3a';
+  ctx.fill();
+  ctx.strokeStyle = '#4a9eff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(CX, CY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#4a9eff';
+  ctx.fill();
+  // Label
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a9eff';
+  ctx.fillText('PORT', CX, CY + 30);
+}
+
+function drawAsteroidShape(a, radius, color) {
+  ctx.beginPath();
+  for (let i = 0; i < a.shape.length; i++) {
+    const v = a.shape[i];
+    const scale = radius / a.baseRadius;
+    const px = a.x + Math.cos(v.angle) * v.r * scale;
+    const py = a.y + Math.sin(v.angle) * v.r * scale;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function drawAsteroid(a) {
+  const locked = a.tier + 1 > getMaxTier();
+  const hpFrac = a.hitsLeft / a.maxHits;
+  const displayR = a.baseRadius * (0.6 + 0.4 * hpFrac);
+  const color = locked ? '#2a2a3a' : TIER_COLORS[a.tier];
+
+  // Flash effect on hit
+  if (a.flashTimer > 0) {
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, displayR + 5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${a.flashTimer * 2})`;
+    ctx.fill();
+  }
+
+  drawAsteroidShape(a, displayR, color);
+
+  // Border
+  ctx.strokeStyle = locked ? '#3a3a4a' : 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // HP indicator
+  if (!locked && hpFrac < 1) {
+    const barW = a.baseRadius * 2;
+    const barH = 3;
+    const bx = a.x - barW / 2;
+    const by = a.y - a.baseRadius - 8;
+    ctx.fillStyle = '#1a1e2e';
+    ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = TIER_COLORS[a.tier];
+    ctx.fillRect(bx, by, barW * hpFrac, barH);
+  }
+
+  // Lock icon
+  if (locked) {
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#555';
+    ctx.fillText('X', a.x, a.y + 4);
+  }
+}
+
+function drawOre(a) {
+  const t = Date.now() / 500;
+  const pulse = 0.8 + 0.2 * Math.sin(t + a.x);
+  const r = 6 * pulse;
+
+  // Glow
+  ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  ctx.arc(a.x, a.y, r + 4, 0, Math.PI * 2);
+  ctx.fillStyle = TIER_COLORS[a.tier];
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Ore circle
+  ctx.beginPath();
+  ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = TIER_COLORS[a.tier];
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Label
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('ORE', a.x, a.y + 14);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CANVAS CLICK HANDLER
+// ═══════════════════════════════════════════════════════════
+
+canvas.addEventListener('click', function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = CW / rect.width;
+  const scaleY = CH / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  // Check station click (deposit)
+  const distStation = Math.hypot(mx - CX, my - CY);
+  if (distStation < 25) {
+    depositOre();
+    return;
+  }
+
+  // Check ore clicks first (smaller targets, higher priority)
+  for (const a of asteroids) {
+    if (!a.alive && a.hasOre) {
+      const dist = Math.hypot(mx - a.x, my - a.y);
+      if (dist < 14) {
+        pickupOre(a);
+        return;
+      }
+    }
+  }
+
+  // Check asteroid clicks
+  for (const a of asteroids) {
+    if (!a.alive) continue;
+    const dist = Math.hypot(mx - a.x, my - a.y);
+    if (dist < a.baseRadius + 4) {
+      mineHit(a);
+      return;
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  GAME ACTIONS
+// ═══════════════════════════════════════════════════════════
+
+function mineHit(asteroid) {
+  const tier = asteroid.tier;
+  if (tier + 1 > getMaxTier()) {
+    addFloatingText(asteroid.x, asteroid.y - 15, 'Too tough!', '#ff6666');
+    addLog(`Can't mine ${TIER_NAMES[tier]} - need better pick`, 'var(--danger)');
+    return;
+  }
+
+  // Danger roll for Tier 4+
+  if (tier >= 3) {
+    const baseDanger = TIER_DANGER[tier];
+    const weaponRed = getWeaponDmg() * 0.008;
+    const fireRateRed = (getFireRate() - 1) * 0.05;
+    const chance = Math.max(0.02, baseDanger - weaponRed - fireRateRed);
+    if (Math.random() < chance) {
+      const dmg = TIER_DANGER_DMG[tier];
+      takeDamage(dmg);
+      addFloatingText(asteroid.x + 20, asteroid.y, `-${dmg} HP`, '#ff4444');
+      addParticles(asteroid.x, asteroid.y, '#ff4444', 5);
+    }
+  }
+
+  // Apply pick damage
+  const dmg = getPickDamage();
+  asteroid.hitsLeft -= dmg;
+  asteroid.flashTimer = 0.15;
+  addFloatingText(asteroid.x, asteroid.y - asteroid.baseRadius - 12, `-${dmg}`, '#fff');
+  addParticles(asteroid.x, asteroid.y, TIER_COLORS[tier], 3);
+
+  if (asteroid.hitsLeft <= 0) {
+    // Asteroid destroyed
+    asteroid.alive = false;
+    asteroid.hasOre = true;
+    asteroid.respawnTimer = 6 + Math.random() * 4;
+    addParticles(asteroid.x, asteroid.y, TIER_COLORS[tier], 12);
+    addFloatingText(asteroid.x, asteroid.y - 20, `${TIER_NAMES[tier]} Ore!`, TIER_COLORS[tier]);
+    addLog(`Destroyed ${TIER_NAMES[tier]} asteroid`, TIER_COLORS[tier]);
+
+    // Landing pad L4: auto-sort to refiner
+    if (state.upgrades.landingPad >= 3) {
+      autoPickupAndDeposit(asteroid);
+    }
+  }
+}
+
+function autoPickupAndDeposit(asteroid) {
+  if (!asteroid.hasOre) return;
+  const refiner = state.refiners.find(r => !r.ore);
+  if (refiner) {
+    refiner.ore = TIER_KEYS[asteroid.tier];
+    refiner.progress = 0;
+    asteroid.hasOre = false;
+    addLog(`Auto-deposited ${TIER_NAMES[asteroid.tier]} ore`, '#4a9eff');
+    createRefinerElements();
+  }
+}
+
+function pickupOre(asteroid) {
+  if (!asteroid.hasOre) return;
+  if (state.carrying.length >= getCapacity()) {
+    addFloatingText(asteroid.x, asteroid.y - 10, 'Inventory full!', '#ffaa00');
+    addLog('Carrying capacity full!', '#ffaa00');
+    return;
+  }
+  asteroid.hasOre = false;
+  state.carrying.push(TIER_KEYS[asteroid.tier]);
+  addFloatingText(asteroid.x, asteroid.y - 10, `+1 ${TIER_NAMES[asteroid.tier]} Ore`, TIER_COLORS[asteroid.tier]);
+  addLog(`Picked up ${TIER_NAMES[asteroid.tier]} ore (${state.carrying.length}/${getCapacity()})`, TIER_COLORS[asteroid.tier]);
+}
+
+function depositOre() {
+  if (state.carrying.length === 0) return;
+  let deposited = 0;
+  while (state.carrying.length > 0) {
+    const refiner = state.refiners.find(r => !r.ore);
+    if (!refiner) break;
+    const ore = state.carrying.shift();
+    refiner.ore = ore;
+    refiner.progress = 0;
+    deposited++;
+  }
+  if (deposited > 0) {
+    addFloatingText(CX, CY - 30, `+${deposited} ore deposited`, '#4a9eff');
+    addLog(`Deposited ${deposited} ore into refiners`, '#4a9eff');
+    // Heal at station
+    state.hp = getMaxHp();
+    state.currentShield = getMaxShield();
+    createRefinerElements();
+  }
+  if (state.carrying.length > 0) {
+    addLog(`${state.carrying.length} ore still carried (refiners full)`, '#ffaa00');
+  }
+}
+
+function collectBar(index) {
+  const refiner = state.refiners[index];
+  if (!refiner || !refiner.ore) return;
+  const refineTime = TIER_REFINE_TIME[TIER_KEYS.indexOf(refiner.ore)] / getRefinerSpeedMult();
+  if (refiner.progress < refineTime) return;
+  const key = refiner.ore;
+  const tierIdx = TIER_KEYS.indexOf(key);
+  state.bars[key] = (state.bars[key] || 0) + 1;
+  addLog(`+1 ${TIER_NAMES[tierIdx]} Bar`, TIER_COLORS[tierIdx]);
+  refiner.ore = null;
+  refiner.progress = 0;
+  createRefinerElements();
+}
+
+function takeDamage(amount) {
+  state.lastDamageTime = state.timePlayed;
+  // Shield absorbs first
+  let shield = getCurrentShield();
+  if (shield > 0) {
+    const absorbed = Math.min(shield, amount);
+    state.currentShield -= absorbed;
+    amount -= absorbed;
+  }
+  state.hp -= amount;
+  if (state.hp <= 0) die();
+}
+
+function die() {
+  const lostCount = state.carrying.length;
+  state.carrying = [];
+  state.hp = getMaxHp();
+  state.currentShield = getMaxShield();
+  addLog(`Defeated! Lost ${lostCount} ore.`, 'var(--danger)');
+  addFloatingText(CX, CY - 40, `DEFEATED! Lost ${lostCount} ore`, '#ff4444');
+}
+
+function purchaseUpgrade(category, level, subIdx) {
+  let cost, upgradeData;
+
+  if (category === 'cosmetic') {
+    const cosmeticCat = Object.keys(COSMETICS)[Math.floor(level)];
+    const item = COSMETICS[cosmeticCat][subIdx];
+    if (!item || state.cosmetics[cosmeticCat][subIdx]) return;
+    cost = item.cost;
+    if (Object.keys(cost).length === 0) return; // free items are already owned
+    if (!canAfford(cost)) return;
+    deductCost(cost);
+    state.cosmetics[cosmeticCat][subIdx] = true;
+    addLog(`Bought ${item.name}`, '#4a9eff');
+    renderUpgradeTab();
+    return;
+  }
+
+  if (category === 'armory') {
+    if (state.upgrades.armory >= 1) return;
+    cost = UPGRADES.armory.cost;
+    if (!canAfford(cost)) return;
+    deductCost(cost);
+    state.upgrades.armory = 1;
+    addLog('Armory built! Combat upgrades unlocked.', '#4a9eff');
+    renderUpgradeTab();
+    return;
+  }
+
+  if (category === 'refinerCount') {
+    const nextLevel = state.upgrades.refinerCount + 1;
+    if (nextLevel >= UPGRADES.refiners.length) return;
+    cost = UPGRADES.refiners[nextLevel].cost;
+    if (!canAfford(cost)) return;
+    deductCost(cost);
+    state.upgrades.refinerCount = nextLevel;
+    state.refiners.push({ ore: null, progress: 0 });
+    addLog(`Built Refiner #${getRefinerCount()}`, '#4a9eff');
+    createRefinerElements();
+    renderUpgradeTab();
+    return;
+  }
+
+  // Linear upgrade categories
+  const upgradeArrays = {
+    pick: UPGRADES.pick,
+    speed: UPGRADES.speed,
+    capacity: UPGRADES.capacity,
+    landingPad: UPGRADES.landingPad,
+    refinerSpeed: UPGRADES.refinerSpeed,
+    thrusterDock: UPGRADES.thrusterDock,
+    droneBay: UPGRADES.droneBay,
+    autoCollector: UPGRADES.autoCollector,
+    weaponDmg: UPGRADES.weaponDmg,
+    fireRate: UPGRADES.fireRate,
+    health: UPGRADES.health,
+    shield: UPGRADES.shield,
+    shieldRegen: UPGRADES.shieldRegen,
+  };
+
+  const arr = upgradeArrays[category];
+  if (!arr) return;
+
+  const currentLevel = state.upgrades[category];
+  const nextLevel = currentLevel + 1;
+  if (nextLevel >= arr.length) return;
+
+  // Combat upgrades require armory
+  if (['weaponDmg','fireRate','health','shield','shieldRegen'].includes(category) && !state.upgrades.armory) return;
+
+  cost = arr[nextLevel].cost;
+  if (Object.keys(cost).length === 0) return; // free level
+  if (!canAfford(cost)) return;
+  deductCost(cost);
+  state.upgrades[category] = nextLevel;
+
+  // Apply stat changes
+  if (category === 'health') {
+    state.hp = getMaxHp();
+  }
+  if (category === 'shield') {
+    state.currentShield = getMaxShield();
+  }
+
+  addLog(`Upgraded ${category} to level ${nextLevel + 1}`, '#4a9eff');
+  renderUpgradeTab();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════════════════
+
+function gameLoop() {
+  const now = performance.now();
+  if (!lastFrameTime) { lastFrameTime = now; return; }
+  let dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+  if (dt > 1) dt = 0.05; // cap if tab was inactive
+
+  state.timePlayed += dt;
+
+  // Tick refiners
+  for (const ref of state.refiners) {
+    if (ref.ore) {
+      ref.progress += dt * getRefinerSpeedMult();
+    }
+  }
+
+  // Tick asteroid respawns
+  for (const a of asteroids) {
+    if (!a.alive && !a.hasOre) {
+      a.respawnTimer -= dt;
+      if (a.respawnTimer <= 0) {
+        a.alive = true;
+        a.hitsLeft = a.maxHits;
+        a.respawnTimer = 0;
+      }
+    }
+    if (a.flashTimer > 0) a.flashTimer -= dt;
+  }
+
+  // Tick drones
+  if (getDroneCount() > 0) {
+    droneTimer += dt;
+    if (droneTimer >= 5) {
+      droneTimer -= 5;
+      const maxT = getDroneMaxTier();
+      let dronesLeft = getDroneCount();
+      for (let d = 0; d < dronesLeft; d++) {
+        const ref = state.refiners.find(r => !r.ore);
+        if (!ref) break;
+        const tier = Math.min(maxT, 3) - 1; // 0-indexed, max tier 3
+        ref.ore = TIER_KEYS[tier];
+        ref.progress = 0;
+        addLog(`Drone mined ${TIER_NAMES[tier]} ore`, var_dim);
+      }
+      createRefinerElements();
+    }
+  }
+
+  // Tick auto-collector
+  const acInterval = getAutoCollectInterval();
+  if (acInterval > 0) {
+    autoCollectTimer += dt;
+    if (autoCollectTimer >= acInterval) {
+      autoCollectTimer -= acInterval;
+      for (let i = 0; i < state.refiners.length; i++) {
+        const ref = state.refiners[i];
+        if (ref.ore) {
+          const refineTime = TIER_REFINE_TIME[TIER_KEYS.indexOf(ref.ore)] / getRefinerSpeedMult();
+          if (ref.progress >= refineTime) {
+            collectBar(i);
+          }
+        }
+      }
+    }
+  }
+
+  // Tick shield regen
+  const maxShield = getMaxShield();
+  if (maxShield > 0 && getCurrentShield() < maxShield) {
+    const timeSinceDmg = state.timePlayed - (state.lastDamageTime || 0);
+    if (timeSinceDmg >= getShieldRegenDelay()) {
+      state.currentShield = Math.min(maxShield, (state.currentShield || 0) + 10 * dt);
+    }
+  }
+
+  // Tick particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Tick floating texts
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    ft.y += ft.vy * dt; ft.life -= dt;
+    if (ft.life <= 0) floatingTexts.splice(i, 1);
+  }
+
+  // Auto-save
+  saveTimer += dt;
+  if (saveTimer >= 30) { saveGame(); saveTimer = 0; }
+
+  // Draw canvas
+  drawField();
+
+  // Update UI (throttled)
+  uiTimer += dt;
+  if (uiTimer >= 0.15) {
+    uiTimer = 0;
+    renderUI();
+  }
+}
+
+const var_dim = '#6a7090'; // for addLog calls
+
+// ═══════════════════════════════════════════════════════════
+//  UI RENDERING
+// ═══════════════════════════════════════════════════════════
+
+function renderUI() {
+  // HUD
+  document.getElementById('hud-time').textContent = formatTime(state.timePlayed);
+  document.getElementById('hud-carry').textContent = `${state.carrying.length}/${getCapacity()}`;
+
+  const maxHp = getMaxHp();
+  document.getElementById('hud-hp-bar').style.width = `${(state.hp / maxHp) * 100}%`;
+  document.getElementById('hud-hp-text').textContent = `${Math.ceil(state.hp)}/${maxHp}`;
+
+  const maxShield = getMaxShield();
+  const shieldWrap = document.getElementById('hud-shield-wrap');
+  if (maxShield > 0) {
+    shieldWrap.style.display = '';
+    document.getElementById('hud-shield-bar').style.width = `${(getCurrentShield() / maxShield) * 100}%`;
+    document.getElementById('hud-shield-text').textContent = `${Math.ceil(getCurrentShield())}/${maxShield}`;
+  } else {
+    shieldWrap.style.display = 'none';
+  }
+
+  // Deposit button
+  const btnDeposit = document.getElementById('btn-deposit');
+  btnDeposit.disabled = state.carrying.length === 0;
+  btnDeposit.textContent = state.carrying.length > 0
+    ? `Deposit ${state.carrying.length} Ore`
+    : 'Deposit Ore';
+
+  // Inventory
+  renderInventory();
+
+  // Refiners
+  renderRefiners();
+
+  // Drone/auto-collect status
+  const dc = getDroneCount();
+  document.getElementById('drone-status').textContent = dc > 0
+    ? `Drones: ${dc} active (Tier 1-${getDroneMaxTier()})`
+    : 'Drones: None';
+  const aci = getAutoCollectInterval();
+  document.getElementById('autocollect-status').textContent = aci > 0
+    ? `Auto-collect: every ${aci}s`
+    : 'Auto-collect: Off';
+
+  // Log
+  renderLog();
+}
+
+function renderInventory() {
+  const el = document.getElementById('inventory');
+  el.innerHTML = TIER_KEYS.map((key, i) =>
+    `<div class="inv-row"><span class="inv-dot" style="background:${TIER_COLORS[i]}"></span>${TIER_NAMES[i]}<span class="inv-count">${state.bars[key] || 0}</span></div>`
+  ).join('');
+}
+
+function createRefinerElements() {
+  // Ensure state.refiners has right count
+  while (state.refiners.length < getRefinerCount()) {
+    state.refiners.push({ ore: null, progress: 0 });
+  }
+
+  const el = document.getElementById('refiners');
+  el.innerHTML = state.refiners.map((ref, i) => {
+    return `<div class="refiner" id="refiner-${i}">
+      <div class="refiner-label">Refiner ${i + 1}</div>
+      <div class="refiner-track"><div class="refiner-fill" id="ref-fill-${i}"></div></div>
+      <div class="refiner-status" id="ref-status-${i}"></div>
+    </div>`;
+  }).join('');
+}
+
+function renderRefiners() {
+  for (let i = 0; i < state.refiners.length; i++) {
+    const ref = state.refiners[i];
+    const fill = document.getElementById(`ref-fill-${i}`);
+    const status = document.getElementById(`ref-status-${i}`);
+    if (!fill || !status) continue;
+
+    if (!ref.ore) {
+      fill.style.width = '0%';
+      fill.style.background = '#333';
+      status.innerHTML = '<span style="color:var(--dim)">Empty</span>';
+    } else {
+      const tierIdx = TIER_KEYS.indexOf(ref.ore);
+      const refineTime = TIER_REFINE_TIME[tierIdx] / getRefinerSpeedMult();
+      const pct = Math.min(100, (ref.progress / refineTime) * 100);
+      fill.style.width = `${pct}%`;
+      fill.style.background = TIER_COLORS[tierIdx];
+
+      if (ref.progress >= refineTime) {
+        status.innerHTML = `<button class="refiner-collect" onclick="collectBar(${i})">${TIER_NAMES[tierIdx]} Bar - Collect!</button>`;
+      } else {
+        const remaining = Math.ceil(refineTime - ref.progress);
+        status.innerHTML = `<span style="color:${TIER_COLORS[tierIdx]}">${TIER_NAMES[tierIdx]} - ${remaining}s</span>`;
+      }
+    }
+  }
+}
+
+function renderLog() {
+  const el = document.getElementById('log');
+  el.innerHTML = gameLog.slice(0, 8).map(l =>
+    `<div style="color:${l.color}">${l.text}</div>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UPGRADE TAB RENDERING
+// ═══════════════════════════════════════════════════════════
+
+const TABS = [
+  { id: 'mining', label: 'Mining' },
+  { id: 'buildings', label: 'Buildings' },
+  { id: 'combat', label: 'Combat' },
+  { id: 'cosmetics', label: 'Cosmetics' },
+];
+
+function initTabs() {
+  const el = document.getElementById('upgrade-tabs');
+  el.innerHTML = TABS.map(t =>
+    `<button class="tab ${t.id === activeTab ? 'active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`
+  ).join('');
+}
+
+function switchTab(tabId) {
+  activeTab = tabId;
+  initTabs();
+  renderUpgradeTab();
+}
+
+function renderUpgradeTab() {
+  const el = document.getElementById('upgrade-content');
+
+  if (activeTab === 'mining') {
+    el.innerHTML = renderLinearUpgrade('pick', 'Mining Pick', UPGRADES.pick, lvl => `${UPGRADES.pick[lvl].name} (${UPGRADES.pick[lvl].damage} dmg, Tier 1-${UPGRADES.pick[lvl].maxTier})`)
+      + renderLinearUpgrade('speed', 'Movement Speed', UPGRADES.speed, lvl => UPGRADES.speed[lvl].boost === 0 ? 'Base speed' : `+${UPGRADES.speed[lvl].boost}% speed`)
+      + renderLinearUpgrade('capacity', 'Ore Capacity', UPGRADES.capacity, lvl => `Carry ${UPGRADES.capacity[lvl].capacity} ore`);
+  }
+  else if (activeTab === 'buildings') {
+    el.innerHTML = renderLinearUpgrade('landingPad', 'Landing Pad', UPGRADES.landingPad, lvl => UPGRADES.landingPad[lvl].effect)
+      + renderRefinerUpgrade()
+      + renderLinearUpgrade('refinerSpeed', 'Refiner Speed', UPGRADES.refinerSpeed, lvl => `${UPGRADES.refinerSpeed[lvl].mult}x speed`)
+      + renderLinearUpgrade('thrusterDock', 'Thruster Dock', UPGRADES.thrusterDock, lvl => UPGRADES.thrusterDock[lvl].effect)
+      + renderArmoryUpgrade()
+      + renderLinearUpgrade('droneBay', 'Drone Bay', UPGRADES.droneBay, lvl => { const d = UPGRADES.droneBay[lvl]; return d.drones === 0 ? 'Not built' : `${d.drones} drones (Tier 1-${d.maxTier})`; })
+      + renderLinearUpgrade('autoCollector', 'Auto-Collector', UPGRADES.autoCollector, lvl => { const a = UPGRADES.autoCollector[lvl]; return a.interval === 0 ? 'Off' : `Every ${a.interval}s`; });
+  }
+  else if (activeTab === 'combat') {
+    if (!state.upgrades.armory) {
+      el.innerHTML = '<div class="upgrade-card"><div class="upgrade-name" style="color:var(--danger)">Armory Required</div><div class="upgrade-effect">Build the Armory in the Buildings tab to unlock combat upgrades.</div></div>';
+    } else {
+      el.innerHTML = renderLinearUpgrade('weaponDmg', 'Weapon Damage', UPGRADES.weaponDmg, lvl => `${UPGRADES.weaponDmg[lvl].damage} damage`)
+        + renderLinearUpgrade('fireRate', 'Fire Rate', UPGRADES.fireRate, lvl => `${UPGRADES.fireRate[lvl].rate} shots/sec`)
+        + renderLinearUpgrade('health', 'Max Health', UPGRADES.health, lvl => `${UPGRADES.health[lvl].hp} HP`)
+        + renderLinearUpgrade('shield', 'Shield', UPGRADES.shield, lvl => `${UPGRADES.shield[lvl].shield} shield`)
+        + renderLinearUpgrade('shieldRegen', 'Shield Regen', UPGRADES.shieldRegen, lvl => `${UPGRADES.shieldRegen[lvl].delay}s regen delay`);
+    }
+  }
+  else if (activeTab === 'cosmetics') {
+    el.innerHTML = renderCosmeticCategory('flooring', 'Flooring')
+      + renderCosmeticCategory('walls', 'Walls / Railings')
+      + renderCosmeticCategory('lighting', 'Lighting')
+      + renderCosmeticCategory('furniture', 'Furniture')
+      + renderCosmeticCategory('exterior', 'Exterior')
+      + renderCosmeticCategory('ambient', 'Ambient Effects');
+  }
+}
+
+function renderLinearUpgrade(key, name, arr, effectFn) {
+  const level = state.upgrades[key];
+  const maxLevel = arr.length - 1;
+  const isMaxed = level >= maxLevel;
+  const nextCost = !isMaxed ? arr[level + 1].cost : {};
+  const affordable = !isMaxed && canAfford(nextCost);
+
+  return `<div class="upgrade-card ${isMaxed ? 'maxed' : ''}">
+    <div class="upgrade-name">${name} <span style="color:var(--dim)">Lv.${level + 1}/${maxLevel + 1}</span></div>
+    <div class="upgrade-effect">Current: ${effectFn(level)}</div>
+    ${!isMaxed ? `<div class="upgrade-effect">Next: ${effectFn(level + 1)}</div>
+    <div class="upgrade-cost">${formatCostHTML(nextCost)}</div>
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('${key}')">Buy</button>` : '<div class="maxed-label">MAX</div>'}
+  </div>`;
+}
+
+function renderRefinerUpgrade() {
+  const count = getRefinerCount();
+  const maxCount = UPGRADES.refiners.length;
+  const isMaxed = count >= maxCount;
+  const nextCost = !isMaxed ? UPGRADES.refiners[count].cost : {};
+  const affordable = !isMaxed && canAfford(nextCost);
+
+  return `<div class="upgrade-card ${isMaxed ? 'maxed' : ''}">
+    <div class="upgrade-name">Refiners <span style="color:var(--dim)">${count}/${maxCount}</span></div>
+    <div class="upgrade-effect">Current: ${count} refiner${count > 1 ? 's' : ''}</div>
+    ${!isMaxed ? `<div class="upgrade-effect">Next: ${count + 1} refiners</div>
+    <div class="upgrade-cost">${formatCostHTML(nextCost)}</div>
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('refinerCount')">Buy</button>` : '<div class="maxed-label">MAX</div>'}
+  </div>`;
+}
+
+function renderArmoryUpgrade() {
+  if (state.upgrades.armory) {
+    return `<div class="upgrade-card maxed">
+      <div class="upgrade-name">Armory</div>
+      <div class="upgrade-effect">Built - Combat upgrades unlocked</div>
+      <div class="maxed-label">BUILT</div>
+    </div>`;
+  }
+  const cost = UPGRADES.armory.cost;
+  const affordable = canAfford(cost);
+  return `<div class="upgrade-card">
+    <div class="upgrade-name">Armory</div>
+    <div class="upgrade-effect">Unlocks all combat upgrades</div>
+    <div class="upgrade-cost">${formatCostHTML(cost)}</div>
+    <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('armory')">Build</button>
+  </div>`;
+}
+
+function renderCosmeticCategory(catKey, catName) {
+  const items = COSMETICS[catKey];
+  const owned = state.cosmetics[catKey];
+
+  return items.map((item, idx) => {
+    const isOwned = owned[idx];
+    const isFree = Object.keys(item.cost).length === 0;
+    if (isFree && isOwned) {
+      return `<div class="upgrade-card maxed">
+        <div class="upgrade-name">${item.name} <span style="color:var(--dim)">${catName}</span></div>
+        <div class="upgrade-effect">${item.desc}</div>
+        <div class="maxed-label">DEFAULT</div>
+      </div>`;
+    }
+    if (isOwned) {
+      return `<div class="upgrade-card maxed">
+        <div class="upgrade-name">${item.name} <span style="color:var(--dim)">${catName}</span></div>
+        <div class="upgrade-effect">${item.desc}</div>
+        <div class="maxed-label">OWNED</div>
+      </div>`;
+    }
+    const affordable = canAfford(item.cost);
+    return `<div class="upgrade-card">
+      <div class="upgrade-name">${item.name} <span style="color:var(--dim)">${catName}</span></div>
+      <div class="upgrade-effect">${item.desc}</div>
+      <div class="upgrade-cost">${formatCostHTML(item.cost)}</div>
+      <button class="btn-buy" ${!affordable ? 'disabled' : ''} onclick="purchaseUpgrade('cosmetic', ${Object.keys(COSMETICS).indexOf(catKey)}, ${idx})">Buy</button>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SAVE / LOAD
+// ═══════════════════════════════════════════════════════════
+
+function saveGame() {
+  state.lastSaveTime = Date.now();
+  state.currentShield = getCurrentShield();
+  try {
+    localStorage.setItem('spaceminer_save', JSON.stringify(state));
+  } catch(e) {}
+}
+
+function loadGame() {
+  try {
+    const data = localStorage.getItem('spaceminer_save');
+    if (!data) return;
+    const saved = JSON.parse(data);
+    const def = defaultState();
+
+    // Merge saved into state, keeping defaults for missing keys
+    state = def;
+    if (saved.bars) Object.assign(state.bars, saved.bars);
+    if (saved.upgrades) Object.assign(state.upgrades, saved.upgrades);
+    if (saved.cosmetics) {
+      for (const key of Object.keys(state.cosmetics)) {
+        if (saved.cosmetics[key]) state.cosmetics[key] = saved.cosmetics[key];
+      }
+    }
+    if (saved.refiners) state.refiners = saved.refiners;
+    if (saved.carrying) state.carrying = saved.carrying;
+    if (typeof saved.hp === 'number') state.hp = saved.hp;
+    if (typeof saved.currentShield === 'number') state.currentShield = saved.currentShield;
+    if (typeof saved.timePlayed === 'number') state.timePlayed = saved.timePlayed;
+    if (typeof saved.lastDamageTime === 'number') state.lastDamageTime = saved.lastDamageTime;
+    state.lastSaveTime = saved.lastSaveTime || Date.now();
+
+    // Process offline progress
+    processOffline();
+
+    addLog('Game loaded!', '#4a9eff');
+  } catch(e) {
+    console.error('Load failed:', e);
+  }
+}
+
+function processOffline() {
+  const now = Date.now();
+  const offlineSec = (now - (state.lastSaveTime || now)) / 1000;
+  if (offlineSec < 2) return;
+
+  // Advance refiners by offline time
+  for (const ref of state.refiners) {
+    if (ref.ore) {
+      ref.progress += offlineSec * getRefinerSpeedMult();
+    }
+  }
+
+  // Drone production during offline
+  if (getDroneCount() > 0 && offlineSec > 5) {
+    const cycles = Math.floor(offlineSec / 5);
+    const maxT = getDroneMaxTier();
+    let produced = 0;
+    for (let c = 0; c < cycles && c < 100; c++) {
+      for (let d = 0; d < getDroneCount(); d++) {
+        const tierKey = TIER_KEYS[Math.min(maxT, 3) - 1];
+        // Auto-collect offline drone output as bars directly
+        state.bars[tierKey] = (state.bars[tierKey] || 0) + 1;
+        produced++;
+      }
+    }
+    if (produced > 0) addLog(`Offline: drones produced ${produced} bars`, '#4a9eff');
+  }
+
+  if (offlineSec > 5) {
+    addLog(`Welcome back! (${Math.floor(offlineSec)}s offline)`, '#4a9eff');
+  }
+}
+
+function resetGame() {
+  if (!confirm('Reset all progress? This cannot be undone!')) return;
+  localStorage.removeItem('spaceminer_save');
+  state = defaultState();
+  gameLog = [];
+  droneTimer = 0;
+  autoCollectTimer = 0;
+  initAsteroids();
+  createRefinerElements();
+  renderUpgradeTab();
+  addLog('Game reset!', '#ffaa00');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INITIALIZATION
+// ═══════════════════════════════════════════════════════════
+
+function init() {
+  loadGame();
+  initStars();
+  initAsteroids();
+  createRefinerElements();
+  initTabs();
+  renderUpgradeTab();
+  renderUI();
+
+  // Ensure HP is valid
+  if (state.hp <= 0 || state.hp > getMaxHp()) state.hp = getMaxHp();
+  if (!state.currentShield && state.currentShield !== 0) state.currentShield = getMaxShield();
+
+  // Start game loop at ~60fps via setInterval (more reliable than rAF in background tabs)
+  window.addEventListener('beforeunload', saveGame);
+  setInterval(gameLoop, 16);
+}
+
+init();
+</script>
+</body>
+</html>
