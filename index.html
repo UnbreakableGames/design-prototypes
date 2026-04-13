@@ -153,9 +153,10 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
         </div>
       </div>
       <div class="panel">
-        <h3>Status</h3>
-        <div id="drone-status" style="font-size:12px;color:var(--dim);margin-bottom:6px"></div>
-        <div id="autocollect-status" style="font-size:12px;color:var(--dim);margin-bottom:6px"></div>
+        <h3>Station</h3>
+        <canvas id="station-canvas" width="240" height="180" style="width:100%;border-radius:4px;background:#080c16"></canvas>
+        <div id="drone-status" style="font-size:11px;color:var(--dim);margin-top:4px"></div>
+        <div id="autocollect-status" style="font-size:11px;color:var(--dim)"></div>
       </div>
       <div class="panel">
         <h3>Log</h3>
@@ -1285,6 +1286,278 @@ function drawProjectiles() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  STATION CANVAS
+// ═══════════════════════════════════════════════════════════
+
+const sCanvas = document.getElementById('station-canvas');
+const sCtx = sCanvas.getContext('2d');
+const SW = 240, SH = 180;
+
+function drawStationView() {
+  sCtx.clearRect(0, 0, SW, SH);
+
+  // Starfield background
+  sCtx.fillStyle = '#080c16';
+  sCtx.fillRect(0, 0, SW, SH);
+  for (let i = 0; i < 30; i++) {
+    const sx = (i * 73 + 17) % SW;
+    const sy = (i * 47 + 31) % SH;
+    sCtx.fillStyle = `rgba(255,255,255,${0.2 + (i % 3) * 0.15})`;
+    sCtx.fillRect(sx, sy, 1, 1);
+  }
+
+  const padLvl = state.upgrades.landingPad;
+  const refCount = getRefinerCount();
+  const refSpeedLvl = state.upgrades.refinerSpeed;
+  const droneLvl = state.upgrades.droneBay;
+  const droneCount = getDroneCount();
+  const autoLvl = state.upgrades.autoCollector;
+  const hasArmory = state.upgrades.armory;
+
+  // === PLATFORM BASE ===
+  // Landing pad grows with level
+  const padW = 80 + padLvl * 15;
+  const padH = 50 + padLvl * 8;
+  const padX = SW / 2 - padW / 2;
+  const padY = SH / 2 - padH / 2 + 10;
+
+  // Platform floor
+  sCtx.fillStyle = '#1a2030';
+  sCtx.fillRect(padX, padY, padW, padH);
+  sCtx.strokeStyle = '#2a3a50';
+  sCtx.lineWidth = 1;
+  sCtx.strokeRect(padX, padY, padW, padH);
+
+  // Landing pad markings
+  sCtx.strokeStyle = padLvl >= 2 ? '#4a9eff' : '#2a3a50';
+  sCtx.lineWidth = 1;
+  sCtx.setLineDash([3, 3]);
+  sCtx.strokeRect(padX + 4, padY + 4, padW - 8, padH - 8);
+  sCtx.setLineDash([]);
+
+  // Speed boost ring at L3+
+  if (padLvl >= 2) {
+    sCtx.beginPath();
+    sCtx.arc(SW / 2, padY + padH / 2, 12, 0, Math.PI * 2);
+    sCtx.strokeStyle = `rgba(74, 158, 255, ${0.3 + 0.15 * Math.sin(Date.now() / 400)})`;
+    sCtx.lineWidth = 1.5;
+    sCtx.stroke();
+  }
+
+  // Auto-sort indicator at L4
+  if (padLvl >= 3) {
+    sCtx.fillStyle = '#4a9eff';
+    sCtx.font = '7px monospace';
+    sCtx.textAlign = 'center';
+    sCtx.fillText('AUTO', SW / 2, padY + padH / 2 + 3);
+  }
+
+  // === REFINERS (right side) ===
+  const refStartX = padX + padW + 6;
+  const refStartY = padY - 5;
+  for (let i = 0; i < refCount; i++) {
+    const ry = refStartY + i * 14;
+    const rx = refStartX;
+    const ref = state.refiners[i];
+    const active = ref && ref.ore;
+
+    // Refiner box
+    sCtx.fillStyle = active ? '#2a1a0a' : '#1a1e2e';
+    sCtx.fillRect(rx, ry, 16, 10);
+    sCtx.strokeStyle = active ? '#ff8800' : '#2a3a50';
+    sCtx.lineWidth = 1;
+    sCtx.strokeRect(rx, ry, 16, 10);
+
+    // Active glow / flame
+    if (active) {
+      const tierIdx = TIER_KEYS.indexOf(ref.ore);
+      const flicker = 0.5 + 0.3 * Math.sin(Date.now() / 200 + i);
+      sCtx.fillStyle = `rgba(255, 136, 0, ${flicker * 0.6})`;
+      sCtx.fillRect(rx + 3, ry + 1, 4, 3);
+      // Bar progress dots
+      const produced = ref.barsProduced;
+      const total = TIER_YIELD[tierIdx];
+      if (total > 0) {
+        const pct = produced / total;
+        sCtx.fillStyle = TIER_COLORS[tierIdx];
+        sCtx.fillRect(rx + 1, ry + 8, 14 * pct, 1);
+      }
+    }
+
+    // Chimney
+    sCtx.fillStyle = '#2a3050';
+    sCtx.fillRect(rx + 6, ry - 3, 3, 3);
+    if (active) {
+      // Smoke
+      const smokeY = ry - 3 - 2 * Math.sin(Date.now() / 300 + i);
+      sCtx.globalAlpha = 0.3;
+      sCtx.fillStyle = '#667';
+      sCtx.beginPath();
+      sCtx.arc(rx + 7.5, smokeY, 2, 0, Math.PI * 2);
+      sCtx.fill();
+      sCtx.globalAlpha = 1;
+    }
+  }
+
+  // Refiner speed conduit (glowing line connecting refiners)
+  if (refSpeedLvl > 0 && refCount > 1) {
+    const conduitX = refStartX - 2;
+    const conduitY1 = refStartY + 5;
+    const conduitY2 = refStartY + (refCount - 1) * 14 + 5;
+    const glow = 0.3 + 0.2 * refSpeedLvl;
+    sCtx.strokeStyle = `rgba(255, 200, 0, ${glow})`;
+    sCtx.lineWidth = 1.5;
+    sCtx.beginPath();
+    sCtx.moveTo(conduitX, conduitY1);
+    sCtx.lineTo(conduitX, conduitY2);
+    sCtx.stroke();
+    // Energy pulses
+    const pulsePos = ((Date.now() / 500) % 1) * (conduitY2 - conduitY1) + conduitY1;
+    sCtx.fillStyle = '#ffcc00';
+    sCtx.beginPath();
+    sCtx.arc(conduitX, pulsePos, 1.5, 0, Math.PI * 2);
+    sCtx.fill();
+  }
+
+  // === DRONE BAY (left side) ===
+  if (droneLvl > 0) {
+    const dbX = padX - 30;
+    const dbY = padY;
+    const dbW = 24;
+    const dbH = 18 + droneCount * 4;
+
+    // Hangar
+    sCtx.fillStyle = '#1a1e30';
+    sCtx.fillRect(dbX, dbY, dbW, dbH);
+    sCtx.strokeStyle = '#4a9eff';
+    sCtx.lineWidth = 1;
+    sCtx.strokeRect(dbX, dbY, dbW, dbH);
+
+    // Hangar door lines
+    sCtx.strokeStyle = '#2a4a6a';
+    sCtx.beginPath();
+    sCtx.moveTo(dbX + dbW / 2, dbY);
+    sCtx.lineTo(dbX + dbW / 2, dbY + dbH);
+    sCtx.stroke();
+
+    // Drone icons inside
+    for (let d = 0; d < droneCount; d++) {
+      const dx = dbX + 6 + (d % 2) * 12;
+      const dy = dbY + 5 + Math.floor(d / 2) * 10;
+      // Little drone triangle
+      sCtx.fillStyle = '#4a9eff';
+      sCtx.beginPath();
+      sCtx.moveTo(dx + 4, dy);
+      sCtx.lineTo(dx, dy + 3);
+      sCtx.lineTo(dx + 4, dy + 2);
+      sCtx.lineTo(dx + 8, dy + 3);
+      sCtx.closePath();
+      sCtx.fill();
+    }
+
+    // Label
+    sCtx.fillStyle = '#4a9eff';
+    sCtx.font = '6px monospace';
+    sCtx.textAlign = 'center';
+    sCtx.fillText('DRONES', dbX + dbW / 2, dbY - 2);
+  }
+
+  // === AUTO-COLLECTOR (conveyor from refiners to storage) ===
+  if (autoLvl > 0) {
+    const convY = padY + padH + 5;
+    const convX1 = refStartX;
+    const convX2 = padX + padW / 2;
+    sCtx.strokeStyle = '#3a5a3a';
+    sCtx.lineWidth = 2;
+    sCtx.beginPath();
+    sCtx.moveTo(convX1, convY);
+    sCtx.lineTo(convX2, convY);
+    sCtx.stroke();
+
+    // Moving items on conveyor
+    const numDots = autoLvl;
+    for (let i = 0; i < numDots; i++) {
+      const t = ((Date.now() / 800 + i * 0.33) % 1);
+      const cx = convX1 + (convX2 - convX1) * t;
+      sCtx.fillStyle = '#44ff44';
+      sCtx.beginPath();
+      sCtx.arc(cx, convY, 1.5, 0, Math.PI * 2);
+      sCtx.fill();
+    }
+
+    sCtx.fillStyle = '#3a5a3a';
+    sCtx.font = '6px monospace';
+    sCtx.textAlign = 'center';
+    sCtx.fillText('COLLECTOR', (convX1 + convX2) / 2, convY + 8);
+  }
+
+  // === ARMORY (bottom-left) ===
+  if (hasArmory) {
+    const ax = padX - 4;
+    const ay = padY + padH - 16;
+    // Turret platform
+    sCtx.fillStyle = '#2a1a1a';
+    sCtx.fillRect(ax - 14, ay, 16, 16);
+    sCtx.strokeStyle = '#ff4444';
+    sCtx.lineWidth = 1;
+    sCtx.strokeRect(ax - 14, ay, 16, 16);
+
+    // Turret barrel (rotates slowly)
+    const turretAngle = Date.now() / 2000;
+    sCtx.save();
+    sCtx.translate(ax - 6, ay + 8);
+    sCtx.rotate(turretAngle);
+    sCtx.fillStyle = '#ff6666';
+    sCtx.fillRect(-1, -6, 2, 6);
+    sCtx.restore();
+
+    // Turret base
+    sCtx.fillStyle = '#cc3333';
+    sCtx.beginPath();
+    sCtx.arc(ax - 6, ay + 8, 3, 0, Math.PI * 2);
+    sCtx.fill();
+
+    sCtx.fillStyle = '#ff4444';
+    sCtx.font = '6px monospace';
+    sCtx.textAlign = 'center';
+    sCtx.fillText('ARMORY', ax - 6, ay - 2);
+  }
+
+  // === PLAYER SHIP (if docked) ===
+  if (isAtPort() && !playerDead) {
+    const shipX = SW / 2;
+    const shipY = padY + padH / 2;
+    sCtx.save();
+    sCtx.translate(shipX, shipY);
+    sCtx.rotate(-Math.PI / 2);
+    sCtx.beginPath();
+    sCtx.moveTo(5, 0);
+    sCtx.lineTo(-3.5, -3);
+    sCtx.lineTo(-2, 0);
+    sCtx.lineTo(-3.5, 3);
+    sCtx.closePath();
+    sCtx.fillStyle = '#ddeeff';
+    sCtx.fill();
+    sCtx.strokeStyle = '#4a9eff';
+    sCtx.lineWidth = 0.5;
+    sCtx.stroke();
+    sCtx.restore();
+  }
+
+  // === STATION LABEL ===
+  sCtx.fillStyle = '#4a9eff';
+  sCtx.font = '8px monospace';
+  sCtx.textAlign = 'center';
+  sCtx.fillText('SPACEPORT', SW / 2, 12);
+
+  // Level indicator
+  const totalBldg = padLvl + (refCount - 1) + refSpeedLvl + droneLvl + autoLvl + (hasArmory ? 1 : 0);
+  sCtx.fillStyle = '#6a7090';
+  sCtx.font = '7px monospace';
+  sCtx.fillText(`${totalBldg} upgrades built`, SW / 2, SH - 4);
+}
+
+// ═══════════════════════════════════════════════════════════
 //  CANVAS CLICK HANDLER
 // ═══════════════════════════════════════════════════════════
 
@@ -1949,8 +2222,9 @@ function gameLoop() {
   saveTimer += dt;
   if (saveTimer >= 30) { saveGame(); saveTimer = 0; }
 
-  // Draw canvas
+  // Draw canvases
   drawField();
+  drawStationView();
 
   // Update UI (throttled)
   uiTimer += dt;
