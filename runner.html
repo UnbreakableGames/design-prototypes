@@ -740,6 +740,13 @@ function render(){
 
   if(player&&player.abilityChanneling){const bw=100,bh=10,bx=W/2-bw/2,by=H/2+30;ctx.fillStyle='#333';ctx.fillRect(bx,by,bw,bh);ctx.fillStyle='#4af';ctx.fillRect(bx,by,bw*(1-player.channelTimer/2),bh);ctx.strokeStyle='#fff';ctx.strokeRect(bx,by,bw,bh);ctx.fillStyle='#fff';ctx.font='10px monospace';ctx.textAlign='center';ctx.fillText('Repairing...',W/2,by-4);}
   if(player&&player.dead){ctx.fillStyle='rgba(100,0,0,0.4)';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.font='bold 36px sans-serif';ctx.textAlign='center';ctx.fillText('RESPAWNING...',W/2,H/2);ctx.font='18px sans-serif';ctx.fillText(`${player.respawnTimer.toFixed(1)}s`,W/2,H/2+30);}
+
+  // Controls hint (bottom-left, above timeline)
+  if(gameState==='playing'||gameState==='wavePause'){
+    ctx.textAlign='left';ctx.font='10px monospace';ctx.fillStyle='#555';
+    const hy=H-52;
+    ctx.fillText('WASD move  |  Shift sprint  |  Click attack  |  Q ability  |  E heal',12,hy);
+  }
 }
 
 function drawGround(){ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,WORLD_W*SCALE,WORLD_H*SCALE);ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;for(let x=0;x<=WORLD_W;x+=10){ctx.beginPath();ctx.moveTo(x*SCALE,0);ctx.lineTo(x*SCALE,WORLD_H*SCALE);ctx.stroke();}for(let y=0;y<=WORLD_H;y+=10){ctx.beginPath();ctx.moveTo(0,y*SCALE);ctx.lineTo(WORLD_W*SCALE,y*SCALE);ctx.stroke();}ctx.strokeStyle='#444';ctx.lineWidth=2;ctx.strokeRect(0,0,WORLD_W*SCALE,WORLD_H*SCALE);ctx.globalAlpha=0.15;ctx.fillStyle='#f00';for(const sx of[15,40,65]){ctx.beginPath();ctx.moveTo((sx-5)*SCALE,0);ctx.lineTo((sx+5)*SCALE,0);ctx.lineTo((sx+3)*SCALE,SPAWN_ZONE_Y*SCALE);ctx.lineTo((sx-3)*SCALE,SPAWN_ZONE_Y*SCALE);ctx.fill();}ctx.globalAlpha=1;ctx.globalAlpha=0.1;ctx.fillStyle='#0f0';for(const gx of GATE_POSITIONS)ctx.fillRect((gx-GATE_WIDTH/2)*SCALE,SPAWN_ZONE_Y*SCALE,GATE_WIDTH*SCALE,(BARRICADE_Y-SPAWN_ZONE_Y)*SCALE);ctx.globalAlpha=1;}
