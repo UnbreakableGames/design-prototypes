@@ -741,11 +741,35 @@ function render(){
   if(player&&player.abilityChanneling){const bw=100,bh=10,bx=W/2-bw/2,by=H/2+30;ctx.fillStyle='#333';ctx.fillRect(bx,by,bw,bh);ctx.fillStyle='#4af';ctx.fillRect(bx,by,bw*(1-player.channelTimer/2),bh);ctx.strokeStyle='#fff';ctx.strokeRect(bx,by,bw,bh);ctx.fillStyle='#fff';ctx.font='10px monospace';ctx.textAlign='center';ctx.fillText('Repairing...',W/2,by-4);}
   if(player&&player.dead){ctx.fillStyle='rgba(100,0,0,0.4)';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.font='bold 36px sans-serif';ctx.textAlign='center';ctx.fillText('RESPAWNING...',W/2,H/2);ctx.font='18px sans-serif';ctx.fillText(`${player.respawnTimer.toFixed(1)}s`,W/2,H/2+30);}
 
-  // Controls hint (bottom-left, above timeline)
+  // Instructions panel (left side, below status HUD)
   if(gameState==='playing'||gameState==='wavePause'){
-    ctx.textAlign='left';ctx.font='10px monospace';ctx.fillStyle='#555';
-    const hy=H-52;
-    ctx.fillText('WASD move  |  Shift sprint  |  Click attack  |  Q ability  |  E heal',12,hy);
+    const pad=12, iw=220, ix=pad-4, iy=130, lineH=14;
+    ctx.fillStyle='rgba(0,0,0,0.45)';
+    ctx.fillRect(ix,iy,iw+8,165);
+    ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;
+    ctx.strokeRect(ix,iy,iw+8,165);
+
+    let ly=iy+14;
+    ctx.textAlign='left';
+
+    // Section: Controls
+    ctx.fillStyle='#888';ctx.font='bold 10px monospace';
+    ctx.fillText('CONTROLS',pad,ly); ly+=lineH+2;
+    ctx.fillStyle='#555';ctx.font='10px monospace';
+    ctx.fillText('WASD      Move',pad,ly); ly+=lineH;
+    ctx.fillText('Shift     Sprint',pad,ly); ly+=lineH;
+    ctx.fillText('Click     Bat attack',pad,ly); ly+=lineH;
+    ctx.fillText('Q         Class ability',pad,ly); ly+=lineH;
+    ctx.fillText('E         Heal',pad,ly); ly+=lineH+6;
+
+    // Section: Objective
+    ctx.fillStyle='#888';ctx.font='bold 10px monospace';
+    ctx.fillText('OBJECTIVE',pad,ly); ly+=lineH+2;
+    ctx.fillStyle='#555';ctx.font='10px monospace';
+    ctx.fillText('Protect the barricade',pad,ly); ly+=lineH;
+    ctx.fillText('Escort civilians to safety',pad,ly); ly+=lineH;
+    ctx.fillText('Kill zombies (Z V A)',pad,ly); ly+=lineH;
+    ctx.fillText('Survive all 6 waves!',pad,ly);
   }
 }
 
