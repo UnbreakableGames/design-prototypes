@@ -33,9 +33,9 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 /* Main layout */
 #main { display: flex; gap: 8px; margin-bottom: 6px; }
 #sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
-#field-wrap { flex: 1; min-width: 0; }
-canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; cursor: crosshair; }
-#field-wrap { display: flex; justify-content: center; }
+#field-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+#field { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; cursor: crosshair; }
+#station-panel { width: 100%; }
 
 /* Sidebar panels */
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
@@ -164,11 +164,10 @@ canvas { width: 100%; max-height: 420px; aspect-ratio: 1; display: block; backgr
     </div>
     <div id="field-wrap">
       <canvas id="field" width="700" height="700"></canvas>
+      <div id="station-panel" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px">
+        <canvas id="station-canvas" width="700" height="220" style="width:100%;border-radius:4px;background:#080c16;display:block"></canvas>
+      </div>
     </div>
-  </div>
-
-  <div id="station-panel" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px">
-    <canvas id="station-canvas" width="700" height="220" style="width:100%;border-radius:4px;background:#080c16;display:block"></canvas>
   </div>
 
   <div id="upgrades">
