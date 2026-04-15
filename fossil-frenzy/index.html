@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fossil Frenzy</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Top Bar -->
+  <header id="top-bar">
+    <div id="currency-display">
+      <span id="currency-icon">&#x1F4B0;</span>
+      <span id="currency-amount">0</span>
+      <span class="currency-label">RG</span>
+    </div>
+    <h1 id="game-title">FOSSIL FRENZY</h1>
+    <div id="top-buttons">
+      <button id="btn-collection" onclick="ui.toggleCollection()">Collection</button>
+    </div>
+  </header>
+
+  <!-- Main Game Area -->
+  <main id="game-area">
+    <!-- Dig Site -->
+    <section id="dig-site-panel">
+      <div id="dig-site-header">
+        <h2>Dig Site</h2>
+        <div id="dig-timer">Resets in: <span id="timer-display">5:00</span></div>
+      </div>
+      <div id="layer-labels"></div>
+      <div id="dig-site-container">
+        <div id="dig-grid"></div>
+      </div>
+      <div id="depth-meter">
+        <div id="depth-label">Depth: 0m</div>
+      </div>
+    </section>
+
+    <!-- Cleaning Station -->
+    <section id="cleaning-panel">
+      <h2>Cleaning Station</h2>
+      <div id="cleaning-area">
+        <div id="cleaning-slot" class="empty">
+          <div id="cleaning-item-display"></div>
+          <div id="dirt-overlay"></div>
+          <p id="cleaning-hint">Click an item in the dig site to clean it</p>
+        </div>
+        <div id="cleaning-progress">
+          <div id="cleaning-bar-bg">
+            <div id="cleaning-bar-fill"></div>
+          </div>
+          <span id="cleaning-clicks-left"></span>
+        </div>
+      </div>
+      <div id="inventory-section">
+        <h3>Inventory</h3>
+        <div id="inventory-slots"></div>
+      </div>
+      <div id="fragment-section">
+        <h3>Fragments</h3>
+        <div id="fragment-slots"></div>
+      </div>
+    </section>
+
+    <!-- Research Tables -->
+    <section id="research-panel">
+      <h2>Research Lab</h2>
+      <div id="research-tables"></div>
+    </section>
+  </main>
+
+  <!-- Bottom Bar: Upgrades -->
+  <footer id="bottom-bar">
+    <div id="upgrades-label">Upgrades</div>
+    <div id="upgrades-bar"></div>
+  </footer>
+
+  <!-- Collection Modal -->
+  <div id="collection-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Collection</h2>
+        <span id="collection-progress"></span>
+        <button class="modal-close" onclick="ui.toggleCollection()">&times;</button>
+      </div>
+      <div id="collection-grid"></div>
+    </div>
+  </div>
+
+  <!-- Research Complete Popup -->
+  <div id="research-popup" class="popup hidden">
+    <div class="popup-content">
+      <h3>Research Complete!</h3>
+      <div id="popup-emoji"></div>
+      <div id="popup-name"></div>
+      <div id="popup-rarity"></div>
+      <div id="popup-report"></div>
+      <div id="popup-reward"></div>
+      <button onclick="ui.closeResearchPopup()">Collect!</button>
+    </div>
+  </div>
+
+  <!-- Item Found Popup -->
+  <div id="found-popup" class="popup hidden">
+    <div class="popup-content found-popup-content">
+      <h3 id="found-popup-title">Item Found!</h3>
+      <div id="found-popup-emoji"></div>
+      <div id="found-popup-name"></div>
+      <div id="found-popup-rarity"></div>
+      <button onclick="ui.closeFoundPopup()">Nice!</button>
+    </div>
+  </div>
+
+  <script src="items.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
