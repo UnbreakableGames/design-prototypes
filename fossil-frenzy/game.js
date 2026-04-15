@@ -68,7 +68,7 @@ const UPGRADES = [
 const DIG_COLS = 12;
 const DIG_ROWS = 20;
 const RESET_INTERVAL = 5 * 60; // 5 minutes in seconds
-const ITEMS_PER_RESET = 8;
+const ITEMS_PER_RESET = 16;
 
 const state = {
   currency: 0,
