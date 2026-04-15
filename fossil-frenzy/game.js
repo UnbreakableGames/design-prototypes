@@ -499,6 +499,7 @@ function clickClean() {
 
     ui.renderInventory();
     ui.renderCurrency();
+    ui.renderUpgrades();
   }
 
   ui.renderCleaning();
@@ -548,6 +549,7 @@ function collectResearch(tableIndex) {
 
   ui.renderResearch();
   ui.renderCurrency();
+  ui.renderUpgrades();
   saveGame();
 }
 
@@ -592,6 +594,7 @@ function startGameLoop() {
       }
     });
     ui.renderResearch();
+    ui.renderUpgrades();
 
     // Auto-save every 30 seconds
     if (Date.now() - state.lastSaveTime > 30000) {
