@@ -1096,6 +1096,75 @@ button, .dig-cell, .inv-item, .upgrade-chip, .research-table, #cleaning-slot {
   transform: translateY(-2px);
 }
 
+/* === MOBILE TABS === */
+#mobile-tabs {
+  display: none;
+  flex-shrink: 0;
+  background: var(--bg-medium);
+  border-bottom: 2px solid #333;
+  padding: 4px;
+  gap: 4px;
+}
+
+.mobile-tab {
+  flex: 1;
+  position: relative;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  padding: 10px 4px;
+  border: 2px solid #333;
+  background: rgba(0,0,0,0.3);
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.mobile-tab.active {
+  border-color: var(--accent);
+  background: rgba(233,69,96,0.15);
+  color: var(--accent);
+}
+
+.mobile-tab .tab-icon {
+  font-size: 18px;
+  font-family: sans-serif;
+}
+
+.mobile-tab .tab-label {
+  font-size: 8px;
+}
+
+.mobile-tab .tab-badge {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--accent);
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--bg-medium);
+  animation: badgePulse 1s ease-in-out infinite alternate;
+}
+
+.mobile-tab .tab-badge.visible {
+  display: block;
+}
+
+.mobile-tab .tab-badge.gold {
+  background: var(--gold);
+}
+
+@keyframes badgePulse {
+  from { transform: scale(1); box-shadow: 0 0 2px rgba(233,69,96,0.6); }
+  to { transform: scale(1.2); box-shadow: 0 0 6px rgba(233,69,96,1); }
+}
+
 /* === ROTATE PROMPT (mobile portrait) === */
 #rotate-prompt {
   display: none;
@@ -1141,7 +1210,94 @@ button, .dig-cell, .inv-item, .upgrade-chip, .research-table, #cleaning-slot {
 }
 
 /* === TOUCH DEVICE IMPROVEMENTS === */
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 900px) {
+  /* Show tabs, hide inactive panels */
+  #mobile-tabs {
+    display: flex;
+  }
+
+  #game-area {
+    flex-direction: column;
+  }
+
+  #dig-site-panel,
+  #cleaning-panel,
+  #research-panel {
+    display: none;
+    flex: 1;
+  }
+
+  body.tab-dig #dig-site-panel,
+  body.tab-clean #cleaning-panel,
+  body.tab-research #research-panel {
+    display: flex;
+  }
+
+  /* Make each panel bigger when solo */
+  #dig-site-panel h2,
+  #cleaning-panel h2,
+  #research-panel h2 {
+    font-size: 12px;
+  }
+
+  /* Bigger dig cells when full-width */
+  .dig-cell .item-reveal {
+    font-size: 28px !important;
+  }
+
+  /* Center cleaning station */
+  #cleaning-slot {
+    width: 220px;
+    height: 220px;
+  }
+
+  #cleaning-item-display {
+    font-size: 80px;
+  }
+
+  #cleaning-progress {
+    width: 220px;
+  }
+
+  #cleaning-bar-bg {
+    height: 14px;
+  }
+
+  #cleaning-hint {
+    font-size: 9px;
+  }
+
+  #cleaning-clicks-left {
+    font-size: 9px;
+  }
+
+  #move-to-cleaner-btn {
+    font-size: 12px;
+    padding: 16px 28px;
+  }
+
+  /* Bigger inventory items */
+  .inv-item {
+    width: 52px;
+    height: 52px;
+    font-size: 26px;
+  }
+
+  #inventory-section h3,
+  #fragment-section h3 {
+    font-size: 9px;
+  }
+
+  /* Upgrade shop — wrap to 2 rows if needed */
+  #upgrades-bar {
+    flex-wrap: wrap;
+  }
+
+  .upgrade-chip {
+    flex: 1 1 calc(33% - 4px);
+    min-width: 140px;
+  }
+
   /* Bigger tap targets */
   #top-buttons button {
     font-size: 11px;

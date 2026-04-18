@@ -318,10 +318,15 @@ function selectDigItem(row, col) {
     state.selectedDig = null;
   } else {
     state.selectedDig = { row, col };
+    // On mobile: auto-switch to clean tab so player sees the Move button
+    if (isMobileLayout()) {
+      ui.switchTab('clean');
+    }
   }
 
   ui.renderDigSite();
   ui.renderCleaning();
+  ui.renderBadges();
 }
 
 const MYSTERY_EMOJI = '\u{1F4E6}'; // box emoji for undiscovered items
@@ -338,7 +343,6 @@ function moveSelectedToCleaner() {
 
   // Send to cleaner — identity is unknown until cleaning is done
   if (rarityConf.fragments > 1) {
-    // Fragment: store which fragment this is, reveal after cleaning
     sendToCleaner(artifact, cell.fragmentIndex);
   } else {
     sendToCleaner(artifact, -1);
@@ -350,11 +354,23 @@ function moveSelectedToCleaner() {
   cell.artifact = null;
   state.selectedDig = null;
 
+  // On mobile: auto-switch to clean tab
+  if (isMobileLayout()) {
+    ui.switchTab('clean');
+  }
+
   ui.renderDigSite();
   ui.renderInventory();
   ui.renderFragments();
   ui.renderCleaning();
+  ui.renderBadges();
   saveGame();
+}
+
+function isMobileLayout() {
+  if (!window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches
+      || window.matchMedia('(max-width: 900px)').matches;
 }
 
 function sendToCleaner(artifact, fragmentIndex) {
@@ -655,6 +671,46 @@ const ui = {
     this.renderFragments();
     this.renderTimer();
     this.renderUpgrades();
+    this.renderBadges();
+  },
+
+  switchTab(tabName) {
+    document.body.classList.remove('tab-dig', 'tab-clean', 'tab-research');
+    document.body.classList.add('tab-' + tabName);
+    document.querySelectorAll('.mobile-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+    state.activeTab = tabName;
+  },
+
+  renderBadges() {
+    // Dig tab: any revealed/collectible cell
+    let digBadge = false;
+    for (let r = 0; r < DIG_ROWS && !digBadge; r++) {
+      for (let c = 0; c < DIG_COLS; c++) {
+        if (state.digGrid[r] && state.digGrid[r][c] && state.digGrid[r][c].revealed) {
+          digBadge = true;
+          break;
+        }
+      }
+    }
+
+    // Clean tab: item selected in dig site (needs move) OR cleaning in progress
+    const cleanBadge = state.selectedDig !== null || state.cleaning !== null;
+
+    // Research tab: any table is complete
+    const researchBadge = state.researchTables.some(t => t && t.complete);
+
+    const setBadge = (id, visible, gold) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('visible', visible);
+      el.classList.toggle('gold', gold);
+    };
+
+    setBadge('badge-dig', digBadge, false);
+    setBadge('badge-clean', cleanBadge, false);
+    setBadge('badge-research', researchBadge, true);
   },
 
   renderCurrency() {
@@ -1138,6 +1194,9 @@ function init() {
   if (!loaded || state.digGrid.length === 0) {
     generateDigSite();
   }
+
+  // Default mobile tab to dig
+  document.body.classList.add('tab-' + (state.activeTab || 'dig'));
 
   ui.renderAll();
   startGameLoop();

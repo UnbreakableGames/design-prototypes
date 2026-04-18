@@ -30,6 +30,25 @@
     </div>
   </header>
 
+  <!-- Mobile Tabs (hidden on desktop) -->
+  <nav id="mobile-tabs">
+    <button class="mobile-tab active" data-tab="dig" onclick="ui.switchTab('dig')">
+      <span class="tab-icon">&#x26CF;</span>
+      <span class="tab-label">Dig</span>
+      <span class="tab-badge" id="badge-dig"></span>
+    </button>
+    <button class="mobile-tab" data-tab="clean" onclick="ui.switchTab('clean')">
+      <span class="tab-icon">&#x1F9FD;</span>
+      <span class="tab-label">Clean</span>
+      <span class="tab-badge" id="badge-clean"></span>
+    </button>
+    <button class="mobile-tab" data-tab="research" onclick="ui.switchTab('research')">
+      <span class="tab-icon">&#x1F52C;</span>
+      <span class="tab-label">Research</span>
+      <span class="tab-badge" id="badge-research"></span>
+    </button>
+  </nav>
+
   <!-- Main Game Area -->
   <main id="game-area">
     <!-- Dig Site -->
