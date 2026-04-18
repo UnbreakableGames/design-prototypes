@@ -1199,18 +1199,20 @@ button, .dig-cell, .inv-item, .upgrade-chip, .research-table, #cleaning-slot {
   max-width: 280px;
 }
 
-/* Show rotate prompt only on mobile-ish portrait screens */
-@media (orientation: portrait) and (max-width: 900px) {
-  #rotate-prompt {
-    display: flex;
-  }
-  #game-container {
-    display: none;
-  }
-}
+/* Rotate prompt disabled — portrait is now supported via mobile tabs */
 
 /* === TOUCH DEVICE IMPROVEMENTS === */
 @media (pointer: coarse), (max-width: 900px) {
+  /* Mobile: fill viewport, no JS scaling needed */
+  #game-container {
+    width: 100vw !important;
+    height: 100vh !important;
+    transform: none !important;
+    position: relative;
+    top: 0;
+    left: 0;
+  }
+
   /* Show tabs, hide inactive panels */
   #mobile-tabs {
     display: flex;

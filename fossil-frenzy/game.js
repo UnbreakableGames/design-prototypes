@@ -1170,6 +1170,12 @@ function scaleGameContainer() {
   const container = document.getElementById('game-container');
   if (!container) return;
 
+  // Mobile: CSS handles it, JS doesn't need to scale
+  if (isMobileLayout()) {
+    container.style.transform = '';
+    return;
+  }
+
   const baseW = 1280;
   const baseH = 800;
   const vw = window.innerWidth;
@@ -1185,6 +1191,7 @@ function scaleGameContainer() {
 }
 
 window.addEventListener('resize', scaleGameContainer);
+window.addEventListener('orientationchange', scaleGameContainer);
 
 // ---- INIT ----
 function init() {
