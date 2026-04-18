@@ -38,6 +38,15 @@ html, body {
   width: 100%;
   overflow: hidden;
   font-size: 10px;
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+button, .dig-cell, .inv-item, .upgrade-chip, .research-table, #cleaning-slot {
+  touch-action: manipulation;
 }
 
 /* Fixed-size game container, scaled to fit viewport via JS */
@@ -1085,4 +1094,133 @@ html, body {
   background: var(--accent);
   color: white;
   transform: translateY(-2px);
+}
+
+/* === ROTATE PROMPT (mobile portrait) === */
+#rotate-prompt {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--bg-dark);
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.rotate-icon {
+  font-size: 64px;
+  font-family: sans-serif;
+  margin-bottom: 20px;
+  animation: rotateNudge 2s ease-in-out infinite;
+}
+
+@keyframes rotateNudge {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+.rotate-text {
+  font-family: var(--pixel-font);
+  font-size: 11px;
+  color: var(--gold);
+  line-height: 1.8;
+  max-width: 280px;
+}
+
+/* Show rotate prompt only on mobile-ish portrait screens */
+@media (orientation: portrait) and (max-width: 900px) {
+  #rotate-prompt {
+    display: flex;
+  }
+  #game-container {
+    display: none;
+  }
+}
+
+/* === TOUCH DEVICE IMPROVEMENTS === */
+@media (pointer: coarse) {
+  /* Bigger tap targets */
+  #top-buttons button {
+    font-size: 11px;
+    padding: 12px 18px;
+  }
+
+  #btn-howto {
+    min-width: 44px;
+    padding: 12px 14px !important;
+  }
+
+  .inv-item {
+    width: 48px;
+    height: 48px;
+    font-size: 22px;
+  }
+
+  .upgrade-chip {
+    padding: 10px 12px;
+    min-width: 100px;
+  }
+
+  .upgrade-chip button {
+    font-size: 9px;
+    padding: 8px 12px;
+  }
+
+  .upgrade-chip .uc-icon {
+    font-size: 24px;
+  }
+
+  .upgrade-chip .uc-name {
+    font-size: 8px;
+  }
+
+  .research-table {
+    min-height: 72px;
+    padding: 12px;
+  }
+
+  .research-table .rt-emoji {
+    font-size: 28px;
+  }
+
+  .research-table .rt-name,
+  .research-table .rt-status {
+    font-size: 9px;
+  }
+
+  #cleaning-slot {
+    width: 160px;
+    height: 160px;
+  }
+
+  #cleaning-item-display {
+    font-size: 56px;
+  }
+
+  #move-to-cleaner-btn {
+    font-size: 11px;
+    padding: 14px 22px;
+  }
+
+  .dig-cell.collectible {
+    /* make collectible cells easier to tap */
+    outline: 1px solid rgba(240,192,64,0.5);
+    outline-offset: -1px;
+  }
+
+  /* Visible active feedback (replaces hover) */
+  .dig-cell:active:not(.dug):not(.locked) {
+    filter: brightness(1.5) !important;
+  }
+
+  .inv-item:active,
+  .upgrade-chip button:active,
+  #top-buttons button:active,
+  .howto-close-btn:active,
+  #move-to-cleaner-btn:active {
+    transform: scale(0.95);
+  }
 }
