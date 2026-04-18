@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <rect width="16" height="16" fill="#1a1a2e"/>
+  <!-- Dig site earth layers -->
+  <rect x="1" y="2" width="14" height="3" fill="#8B6914"/>
+  <rect x="1" y="5" width="14" height="3" fill="#A0522D"/>
+  <rect x="1" y="8" width="14" height="3" fill="#C4B078"/>
+  <rect x="1" y="11" width="14" height="3" fill="#696969"/>
+  <!-- Gold artifact -->
+  <rect x="7" y="9" width="2" height="2" fill="#f0c040"/>
+  <rect x="6" y="10" width="4" height="1" fill="#f0c040"/>
+  <!-- Pickaxe -->
+  <rect x="10" y="1" width="1" height="1" fill="#e94560"/>
+  <rect x="11" y="2" width="1" height="1" fill="#e94560"/>
+  <rect x="12" y="3" width="1" height="1" fill="#e94560"/>
+  <rect x="13" y="4" width="1" height="1" fill="#999"/>
+  <rect x="14" y="5" width="1" height="1" fill="#999"/>
+</svg>

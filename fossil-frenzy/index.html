@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fossil Frenzy</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
+<div id="game-container">
   <!-- Top Bar -->
   <header id="top-bar">
     <div id="currency-display">
@@ -17,6 +18,7 @@
     </div>
     <h1 id="game-title">FOSSIL FRENZY</h1>
     <div id="top-buttons">
+      <button id="btn-howto" onclick="ui.openHowTo()">?</button>
       <button id="btn-collection" onclick="ui.toggleCollection()">Collection</button>
     </div>
   </header>
@@ -112,6 +114,54 @@
       <button onclick="ui.closeFoundPopup()">Nice!</button>
     </div>
   </div>
+
+  <!-- How to Play Modal -->
+  <div id="howto-modal" class="modal hidden">
+    <div class="modal-content howto-content">
+      <div class="modal-header">
+        <h2>How to Play</h2>
+        <button class="modal-close" onclick="ui.closeHowTo()">&times;</button>
+      </div>
+      <div class="howto-body">
+        <div class="howto-step">
+          <span class="howto-num">1</span>
+          <div>
+            <strong>Dig</strong> — Click dirt blocks in the dig site to excavate. You can only dig a block if the one above it is cleared.
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="howto-num">2</span>
+          <div>
+            <strong>Find</strong> — Unknown artifacts appear as mystery boxes. Click one to select it.
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="howto-num">3</span>
+          <div>
+            <strong>Clean</strong> — Click "Move to Cleaner", then click the item repeatedly to brush off the dirt and reveal what it is.
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="howto-num">4</span>
+          <div>
+            <strong>Research</strong> — Cleaned items auto-place on a research table. Research takes real time. Come back later to collect.
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="howto-num">5</span>
+          <div>
+            <strong>Upgrade</strong> — Spend Research Grants (RG) on upgrades at the bottom. Deeper layers and higher rarities await.
+          </div>
+        </div>
+        <div class="howto-footer">
+          Rare items come in pieces. Collect all fragments to assemble them! Dig site resets every 5 minutes.
+        </div>
+        <button class="howto-close-btn" onclick="ui.closeHowTo()">Start Digging!</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /game-container -->
 
   <script src="items.js"></script>
   <script src="game.js"></script>

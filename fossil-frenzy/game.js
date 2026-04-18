@@ -1098,7 +1098,37 @@ const ui = {
   closeFoundPopup() {
     document.getElementById('found-popup').classList.add('hidden');
   },
+
+  openHowTo() {
+    document.getElementById('howto-modal').classList.remove('hidden');
+  },
+
+  closeHowTo() {
+    document.getElementById('howto-modal').classList.add('hidden');
+    localStorage.setItem('fossilFrenzy_seenHowTo', '1');
+  },
 };
+
+// ---- RESPONSIVE SCALING ----
+function scaleGameContainer() {
+  const container = document.getElementById('game-container');
+  if (!container) return;
+
+  const baseW = 1280;
+  const baseH = 800;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  const scale = Math.min(vw / baseW, vh / baseH);
+  const scaledW = baseW * scale;
+  const scaledH = baseH * scale;
+  const offsetX = (vw - scaledW) / 2;
+  const offsetY = (vh - scaledH) / 2;
+
+  container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+}
+
+window.addEventListener('resize', scaleGameContainer);
 
 // ---- INIT ----
 function init() {
@@ -1111,6 +1141,12 @@ function init() {
 
   ui.renderAll();
   startGameLoop();
+  scaleGameContainer();
+
+  // Show How to Play on first visit
+  if (!localStorage.getItem('fossilFrenzy_seenHowTo')) {
+    ui.openHowTo();
+  }
 
   // Check for completed research on load
   state.researchTables.forEach((table, i) => {
