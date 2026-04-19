@@ -550,10 +550,10 @@ const TIER_DANGER_DMG = [0, 0, 0, 5, 8, 12, 18];
 // Enemy config per tier zone (only Tier 4+ spawn enemies)
 const ENEMY_CONFIG = [
   null, null, null, // T1-T3: no enemies
-  { hp: 20, damage: 3, speed: 40, attackRange: 18, attackRate: 1.5, color: '#50c878', size: 6, xp: 0 },   // T4 - Emeralite zone
-  { hp: 35, damage: 5, speed: 50, attackRange: 20, attackRate: 1.2, color: '#ffd700', size: 7, xp: 0 },   // T5 - Aurium zone
-  { hp: 60, damage: 8, speed: 55, attackRange: 22, attackRate: 1.0, color: '#9b59b6', size: 8, xp: 0 },   // T6 - Voidstone zone
-  { hp: 100, damage: 12, speed: 60, attackRange: 24, attackRate: 0.8, color: '#dc143c', size: 9, xp: 0 }, // T7 - Cosmium zone
+  { hp: 20, damage: 3, speed: 40, attackRange: 18, attackRate: 1.5, color: '#50c878', size: 6, xp: 0, salvage: 1 },   // T4 - Emeralite zone
+  { hp: 35, damage: 5, speed: 50, attackRange: 20, attackRate: 1.2, color: '#ffd700', size: 7, xp: 0, salvage: 2 },   // T5 - Aurium zone
+  { hp: 60, damage: 8, speed: 55, attackRange: 22, attackRate: 1.0, color: '#9b59b6', size: 8, xp: 0, salvage: 3 },   // T6 - Voidstone zone
+  { hp: 100, damage: 12, speed: 60, attackRange: 24, attackRate: 0.8, color: '#dc143c', size: 9, xp: 0, salvage: 5 }, // T7 - Cosmium zone
 ];
 const ENEMY_SPAWN_INTERVAL = 4; // seconds between spawn checks
 const ENEMIES_PER_RING = [0, 0, 0, 2, 2, 2, 2]; // max active enemies per ring
@@ -569,8 +569,8 @@ const UPGRADES = {
     { name: 'Cobalt Pick', damage: 3, maxTier: 3, cost: { copper: 12 } },
     { name: 'Emeralite Pick', damage: 5, maxTier: 4, cost: { cobalt: 14, copper: 10 } },
     { name: 'Aurium Pick', damage: 8, maxTier: 5, cost: { emeralite: 10, cobalt: 12 } },
-    { name: 'Void Pick', damage: 12, maxTier: 6, cost: { aurium: 8, emeralite: 10, cobalt: 15 } },
-    { name: 'Cosmic Pick', damage: 18, maxTier: 7, cost: { voidstone: 8, aurium: 8, emeralite: 12 } },
+    { name: 'Void Pick', damage: 12, maxTier: 6, cost: { aurium: 8, emeralite: 10, cobalt: 15, salvage: 15 } },
+    { name: 'Cosmic Pick', damage: 18, maxTier: 7, cost: { voidstone: 8, aurium: 8, emeralite: 12, salvage: 40 } },
   ],
   speed: [
     { boost: 0, cost: {} },
@@ -620,51 +620,51 @@ const UPGRADES = {
     { drones: 0, maxTier: 0, cost: {} },
     { drones: 1, maxTier: 1, cost: { emeralite: 8, cobalt: 10 } },
     { drones: 2, maxTier: 1, cost: { aurium: 6, emeralite: 8 } },
-    { drones: 3, maxTier: 2, cost: { voidstone: 5, aurium: 6, cobalt: 12 } },
-    { drones: 5, maxTier: 3, cost: { cosmium: 4, voidstone: 5, emeralite: 10 } },
+    { drones: 3, maxTier: 2, cost: { voidstone: 5, aurium: 6, cobalt: 12, salvage: 20 } },
+    { drones: 5, maxTier: 3, cost: { cosmium: 4, voidstone: 5, emeralite: 10, salvage: 50 } },
   ],
   autoCollector: [
     { interval: 0, cost: {} },
     { interval: 30, cost: { emeralite: 8, cobalt: 10 } },
-    { interval: 15, cost: { aurium: 6, emeralite: 8 } },
+    { interval: 15, cost: { aurium: 6, emeralite: 8, salvage: 25 } },
   ],
   armory: { cost: { cobalt: 15 } },
   weaponDmg: [
     { damage: 5, cost: {} },
-    { damage: 8, cost: { cobalt: 10 } },
-    { damage: 12, cost: { emeralite: 8, cobalt: 10 } },
-    { damage: 18, cost: { aurium: 6, emeralite: 8 } },
-    { damage: 25, cost: { voidstone: 5, aurium: 6, emeralite: 10 } },
-    { damage: 35, cost: { cosmium: 5, voidstone: 5, aurium: 8 } },
+    { damage: 8, cost: { cobalt: 10, salvage: 3 } },
+    { damage: 12, cost: { emeralite: 8, cobalt: 10, salvage: 8 } },
+    { damage: 18, cost: { aurium: 6, emeralite: 8, salvage: 18 } },
+    { damage: 25, cost: { voidstone: 5, aurium: 6, emeralite: 10, salvage: 35 } },
+    { damage: 35, cost: { cosmium: 5, voidstone: 5, aurium: 8, salvage: 65 } },
   ],
   fireRate: [
     { rate: 1.0, cost: {} },
-    { rate: 1.5, cost: { cobalt: 12 } },
-    { rate: 2.0, cost: { emeralite: 8, cobalt: 10 } },
-    { rate: 2.5, cost: { aurium: 6, emeralite: 8 } },
-    { rate: 3.0, cost: { voidstone: 5, aurium: 6, emeralite: 12 } },
+    { rate: 1.5, cost: { cobalt: 12, salvage: 5 } },
+    { rate: 2.0, cost: { emeralite: 8, cobalt: 10, salvage: 12 } },
+    { rate: 2.5, cost: { aurium: 6, emeralite: 8, salvage: 25 } },
+    { rate: 3.0, cost: { voidstone: 5, aurium: 6, emeralite: 12, salvage: 50 } },
   ],
   health: [
     { hp: 50, cost: {} },
-    { hp: 75, cost: { cobalt: 8 } },
-    { hp: 100, cost: { emeralite: 6, cobalt: 8 } },
-    { hp: 150, cost: { aurium: 5, emeralite: 6 } },
-    { hp: 200, cost: { voidstone: 5, aurium: 5, emeralite: 10 } },
-    { hp: 300, cost: { cosmium: 4, voidstone: 5, aurium: 8 } },
+    { hp: 75, cost: { cobalt: 8, salvage: 2 } },
+    { hp: 100, cost: { emeralite: 6, cobalt: 8, salvage: 6 } },
+    { hp: 150, cost: { aurium: 5, emeralite: 6, salvage: 14 } },
+    { hp: 200, cost: { voidstone: 5, aurium: 5, emeralite: 10, salvage: 30 } },
+    { hp: 300, cost: { cosmium: 4, voidstone: 5, aurium: 8, salvage: 60 } },
   ],
   shield: [
     { shield: 0, cost: {} },
-    { shield: 25, cost: { cobalt: 10 } },
-    { shield: 50, cost: { emeralite: 8, cobalt: 10 } },
-    { shield: 75, cost: { aurium: 6, emeralite: 8 } },
-    { shield: 100, cost: { voidstone: 5, aurium: 6, emeralite: 10 } },
-    { shield: 150, cost: { cosmium: 5, voidstone: 5, aurium: 8 } },
+    { shield: 25, cost: { cobalt: 10, salvage: 5 } },
+    { shield: 50, cost: { emeralite: 8, cobalt: 10, salvage: 12 } },
+    { shield: 75, cost: { aurium: 6, emeralite: 8, salvage: 25 } },
+    { shield: 100, cost: { voidstone: 5, aurium: 6, emeralite: 10, salvage: 50 } },
+    { shield: 150, cost: { cosmium: 5, voidstone: 5, aurium: 8, salvage: 100 } },
   ],
   shieldRegen: [
     { delay: 5, cost: {} },
-    { delay: 4, cost: { emeralite: 6, cobalt: 8 } },
-    { delay: 3, cost: { aurium: 5, emeralite: 6 } },
-    { delay: 2, cost: { voidstone: 5, aurium: 5, emeralite: 10 } },
+    { delay: 4, cost: { emeralite: 6, cobalt: 8, salvage: 8 } },
+    { delay: 3, cost: { aurium: 5, emeralite: 6, salvage: 20 } },
+    { delay: 2, cost: { voidstone: 5, aurium: 5, emeralite: 10, salvage: 45 } },
   ],
 };
 
@@ -740,6 +740,7 @@ const COSMETICS = {
 function defaultState() {
   return {
     bars: { iron: 0, copper: 0, cobalt: 0, emeralite: 0, aurium: 0, voidstone: 0, cosmium: 0 },
+    salvage: 0,
     upgrades: {
       pick: 0, speed: 0, capacity: 0,
       landingPad: 0, refinerCount: 0, refinerSpeed: 0, thrusterDock: 0,
@@ -813,14 +814,22 @@ function getPlayerSpeed() {
 
 function canAfford(cost) {
   for (const [key, amount] of Object.entries(cost)) {
-    if ((state.bars[key] || 0) < amount) return false;
+    if (key === 'salvage') {
+      if ((state.salvage || 0) < amount) return false;
+    } else {
+      if ((state.bars[key] || 0) < amount) return false;
+    }
   }
   return true;
 }
 
 function deductCost(cost) {
   for (const [key, amount] of Object.entries(cost)) {
-    state.bars[key] -= amount;
+    if (key === 'salvage') {
+      state.salvage = (state.salvage || 0) - amount;
+    } else {
+      state.bars[key] -= amount;
+    }
   }
 }
 
@@ -833,6 +842,12 @@ function formatTime(seconds) {
 function formatCostHTML(cost, checkAfford = true) {
   if (!cost || Object.keys(cost).length === 0) return '<span style="color:var(--hp)">Free</span>';
   return Object.entries(cost).map(([key, amount]) => {
+    if (key === 'salvage') {
+      const has = state.salvage || 0;
+      const insufficient = checkAfford && has < amount;
+      const color = '#c0c0c0';
+      return `<span class="cost-item ${insufficient ? 'cost-insufficient' : ''}" style="color:${insufficient ? 'var(--danger)' : color}"><span class="cost-dot" style="background:${color}"></span>${amount} Salvage</span>`;
+    }
     const idx = TIER_KEYS.indexOf(key);
     const color = TIER_COLORS[idx];
     const has = state.bars[key] || 0;
@@ -881,6 +896,7 @@ let playerRespawnTimer = 0;
 let playerInvulnTimer = 0; // brief invulnerability after respawn
 let projectiles = []; // { x, y, vx, vy, damage, life }
 let enemies = [];     // { x, y, tier, hp, maxHp, angle, attackTimer, targetAngle }
+let salvageDrops = []; // { x, y, amount, life, bob } — orbs dropped by defeated enemies
 let enemySpawnTimer = 0;
 
 function initStars() {
@@ -980,6 +996,9 @@ function drawField() {
 
   // Enemies
   drawEnemies();
+
+  // Salvage drops
+  drawSalvageDrops();
 
   // Player ship
   drawPlayer();
@@ -1283,6 +1302,43 @@ function drawProjectiles() {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSalvageDrops() {
+  const t = Date.now() / 1000;
+  for (const s of salvageDrops) {
+    const bobY = Math.sin(t * 2 + s.bob) * 2;
+    const drawY = s.y + bobY;
+    const fadeAlpha = s.life < 5 ? (s.life / 5) : 1; // Fade when nearly despawning
+    // Outer glow
+    ctx.globalAlpha = 0.25 * fadeAlpha;
+    ctx.fillStyle = '#c0c0c0';
+    ctx.beginPath();
+    ctx.arc(s.x, drawY, 8, 0, Math.PI * 2);
+    ctx.fill();
+    // Mid glow
+    ctx.globalAlpha = 0.5 * fadeAlpha;
+    ctx.beginPath();
+    ctx.arc(s.x, drawY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.globalAlpha = 1 * fadeAlpha;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x, drawY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Sparkle cross
+    ctx.globalAlpha = 0.8 * fadeAlpha;
+    ctx.strokeStyle = '#e8e8e8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(s.x - 6, drawY);
+    ctx.lineTo(s.x + 6, drawY);
+    ctx.moveTo(s.x, drawY - 6);
+    ctx.lineTo(s.x, drawY + 6);
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
 }
@@ -1999,6 +2055,17 @@ function tickEnemies(dt) {
       addParticles(e.x, e.y, cfg.color, 10);
       addParticles(e.x, e.y, '#ffffff', 5);
       addFloatingText(e.x, e.y - 15, 'Destroyed!', cfg.color);
+      // Drop salvage orb
+      if (cfg.salvage && cfg.salvage > 0) {
+        salvageDrops.push({
+          x: e.x,
+          y: e.y,
+          amount: cfg.salvage,
+          life: 60, // 60 second lifetime
+          bob: Math.random() * Math.PI * 2,
+        });
+        addFloatingText(e.x, e.y, `+${cfg.salvage} Salvage`, '#c0c0c0');
+      }
       enemies.splice(i, 1);
     }
   }
@@ -2065,6 +2132,29 @@ function tickProjectiles(dt) {
         addFloatingText(e.x, e.y - e.size - 5, `-${p.damage}`, '#44ff44');
         projectiles.splice(i, 1);
         break;
+      }
+    }
+  }
+}
+
+function tickSalvageDrops(dt) {
+  const pickupRange = 18; // studs — walk close enough to auto-pickup
+  for (let i = salvageDrops.length - 1; i >= 0; i--) {
+    const s = salvageDrops[i];
+    s.life -= dt;
+    if (s.life <= 0) {
+      salvageDrops.splice(i, 1);
+      continue;
+    }
+    // Auto-pickup when player gets close
+    if (!playerDead) {
+      const d = Math.hypot(s.x - playerX, s.y - playerY);
+      if (d < pickupRange) {
+        state.salvage = (state.salvage || 0) + s.amount;
+        addFloatingText(playerX, playerY - 15, `+${s.amount} Salvage`, '#c0c0c0');
+        addParticles(s.x, s.y, '#ffffff', 6);
+        addLog(`Collected ${s.amount} Salvage`, '#c0c0c0');
+        salvageDrops.splice(i, 1);
       }
     }
   }
@@ -2300,6 +2390,7 @@ function gameLoop() {
   tickEnemies(dt);
   tickPlayerCombat(dt);
   tickProjectiles(dt);
+  tickSalvageDrops(dt);
 
   // Tick shield regen
   const maxShield = getMaxShield();
@@ -2398,9 +2489,15 @@ function renderUI() {
 
 function renderInventory() {
   const el = document.getElementById('inventory');
-  el.innerHTML = TIER_KEYS.map((key, i) =>
+  const barRows = TIER_KEYS.map((key, i) =>
     `<div class="inv-row"><span class="inv-dot" style="background:${TIER_COLORS[i]}"></span>${TIER_NAMES[i]}<span class="inv-count">${state.bars[key] || 0}</span></div>`
   ).join('');
+  // Show salvage row if armory built OR if we have any salvage
+  const showSalvage = state.upgrades.armory > 0 || (state.salvage || 0) > 0;
+  const salvageRow = showSalvage
+    ? `<div class="inv-row" style="border-top:1px solid var(--border); margin-top:4px; padding-top:6px;"><span class="inv-dot" style="background:#c0c0c0; box-shadow:0 0 4px #c0c0c0"></span>Salvage<span class="inv-count">${state.salvage || 0}</span></div>`
+    : '';
+  el.innerHTML = barRows + salvageRow;
 }
 
 function createRefinerElements() {
@@ -2693,6 +2790,7 @@ function loadGame() {
     // Merge saved into state, keeping defaults for missing keys
     state = def;
     if (saved.bars) Object.assign(state.bars, saved.bars);
+    if (typeof saved.salvage === 'number') state.salvage = saved.salvage;
     if (saved.upgrades) Object.assign(state.upgrades, saved.upgrades);
     if (saved.cosmetics) {
       for (const key of Object.keys(state.cosmetics)) {
@@ -2789,6 +2887,7 @@ function resetGame() {
   playerFireTimer = 0;
   enemies = [];
   projectiles = [];
+  salvageDrops = [];
   enemySpawnTimer = 0;
   initAsteroids();
   createRefinerElements();
