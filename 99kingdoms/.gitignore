@@ -1,0 +1,7 @@
+node_modules
+dist
+.DS_Store
+*.log
+
+# Build artifacts
+99kingdoms-itch.zip
