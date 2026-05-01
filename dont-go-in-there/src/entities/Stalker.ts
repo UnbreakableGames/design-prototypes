@@ -14,6 +14,10 @@ export class Stalker {
   visionRange = 120;
   visionHalfAngle = Math.PI / 6; // 30° each side → 60° cone
 
+  // Multipliers applied by raid modifiers (set externally after construction).
+  speedMult = 1;
+  visionMult = 1;
+
   private waypoints: WaypointPath;
   private wpIndex = 0;
   private scanPhase: 'hold-pre' | 'sweep1' | 'hold-mid' | 'sweep2' | 'hold-post' = 'hold-pre';
@@ -96,7 +100,7 @@ export class Stalker {
       return;
     }
     this.faceToward(wp.x, wp.y, dt * 0.7);
-    this.moveToward(wp.x, wp.y, this.speedPatrol * dt, map);
+    this.moveToward(wp.x, wp.y, this.speedPatrol * this.speedMult * dt, map);
   }
 
   private tickScan(dt: number): void {
@@ -155,7 +159,7 @@ export class Stalker {
 
   private tickChase(dt: number, map: BasementMap, px: number, py: number): void {
     this.faceToward(px, py, dt * 1.4);
-    this.moveToward(px, py, this.speedChase * dt, map);
+    this.moveToward(px, py, this.speedChase * this.speedMult * dt, map);
     if (!this.canSee(px, py, map)) {
       this.lostTimer += dt;
       if (this.lostTimer > 0.45) {
@@ -174,7 +178,7 @@ export class Stalker {
       return;
     }
     this.faceToward(this.lastSeenX, this.lastSeenY, dt * 1.0);
-    this.moveToward(this.lastSeenX, this.lastSeenY, this.speedInvestigate * dt, map);
+    this.moveToward(this.lastSeenX, this.lastSeenY, this.speedInvestigate * this.speedMult * dt, map);
   }
 
   private beginScan(arc: number, sweepDuration: number): void {
@@ -199,7 +203,7 @@ export class Stalker {
     const dx = targetX - this.x;
     const dy = targetY - this.y;
     const d = Math.hypot(dx, dy);
-    if (d > this.visionRange) return false;
+    if (d > this.visionRange * this.visionMult) return false;
     if (d > 0.001) {
       const angleToTarget = Math.atan2(dy, dx);
       const diff = Math.abs(normalizeAngle(angleToTarget - this.facing));
@@ -241,6 +245,16 @@ export class Stalker {
     this.y = ny;
   }
 
+  // External cue (e.g. failed container QTE) telling the stalker to head to a
+  // specific location. Drops it straight into investigate, no chase yet.
+  alertTo(x: number, y: number): void {
+    this.lastSeenX = x;
+    this.lastSeenY = y;
+    this.state = 'investigate';
+    this.lostTimer = 0;
+    this.stuckTimer = 0;
+  }
+
   hits(playerX: number, playerY: number, playerR: number): boolean {
     const d = Math.hypot(playerX - this.x, playerY - this.y);
     return d < this.radius + playerR;
@@ -249,7 +263,7 @@ export class Stalker {
   renderCone(ctx: CanvasRenderingContext2D): void {
     ctx.save();
     const isChase = this.state === 'chase';
-    const r = this.visionRange;
+    const r = this.visionRange * this.visionMult;
     const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
     if (isChase) {
       grad.addColorStop(0, 'rgba(165,82,106,0.50)');

@@ -1,5 +1,6 @@
 import type { Game } from '../game/Game';
 import { rect, text, pointInRect, W, H } from '../systems/Render';
+import { ALL_PARTS } from '../types';
 import {
   pickScene,
   type DialogScene,
@@ -15,7 +16,16 @@ export class DialogPanel {
   private wantsRepair = false;
 
   begin(game: Game): void {
-    this.scene = pickScene(game.save.metFriend, game.save.pendingReturn);
+    const fullyRepaired = ALL_PARTS.every((p) => game.isPartRepaired(p));
+    this.scene = pickScene(
+      game.save.metFriend,
+      game.save.pendingReturn,
+      fullyRepaired,
+      game.save.tutorialStep,
+      game.save.craftingUnlocked,
+      game.isPartRepaired('head'),
+      game.save.firstDeathPending,
+    );
     this.nodeId = 'open';
     this.open = true;
     this.wantsRepair = false;
@@ -41,6 +51,12 @@ export class DialogPanel {
     if (!node) return;
     if (node.onEnter === 'markMet') game.markMet();
     if (node.onEnter === 'ackReturn') game.ackReturn();
+    if (node.onEnter === 'ackFirstDeath') game.ackFirstDeath();
+    if (node.onEnter === 'tutorialEnterBasement') {
+      game.advanceTutorial('talk_to_friend', 'enter_basement');
+    }
+    if (node.onEnter === 'tutorialFinishReward') game.grantTutorialReward();
+    if (node.onEnter === 'tutorialFinishBriefing') game.finishTutorialBriefing();
   }
 
   private advance(nextId: string, game: Game): void {
@@ -92,14 +108,14 @@ export class DialogPanel {
     const py = (H - ph) / 2;
     rect(ctx, px, py, pw, ph, '#15101a', '#3a2c1a');
 
-    text(ctx, 'FRIEND', px + pw / 2, py + 18, {
+    text(ctx, '"FRIEND"', px + pw / 2, py + 18, {
       align: 'center',
       size: 11,
       color: '#7a3030',
       font: "'Special Elite', monospace",
     });
 
-    // Friend's line — wrap to fit the panel width
+    // Friend's line — wrap to fit the panel width.
     const lines = wrapLines(ctx, node.text, pw - 80, 17, "'Special Elite', monospace");
     let ty = py + 64;
     for (const line of lines) {

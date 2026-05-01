@@ -73,3 +73,14 @@ export function dist(ax: number, ay: number, bx: number, by: number): number {
   const dy = ay - by;
   return Math.sqrt(dx * dx + dy * dy);
 }
+
+// Distance from a point to the nearest edge of an AABB. Returns 0 when the
+// point is inside the rect. Useful for "interaction range" checks against
+// entities of any aspect ratio — works equally well from short and long sides.
+export function distToRect(px: number, py: number, x: number, y: number, w: number, h: number): number {
+  const cx = Math.max(x, Math.min(px, x + w));
+  const cy = Math.max(y, Math.min(py, y + h));
+  const dx = px - cx;
+  const dy = py - cy;
+  return Math.sqrt(dx * dx + dy * dy);
+}

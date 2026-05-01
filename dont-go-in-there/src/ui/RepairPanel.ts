@@ -4,6 +4,7 @@ import {
   ALL_PARTS,
   ITEM_COLOR,
   ITEM_LABEL,
+  PART_BENEFIT,
   PART_LABEL,
   PART_REQS,
   type ItemKind,
@@ -43,7 +44,7 @@ export class RepairPanel {
       color: '#a5526a',
       font: "'Special Elite', monospace",
     });
-    text(ctx, 'REPAIR FRIEND', px + pw / 2, py + 44, {
+    text(ctx, 'REPAIR "FRIEND"', px + pw / 2, py + 44, {
       align: 'center',
       size: 18,
       color: '#c9b9a4',
@@ -63,7 +64,10 @@ export class RepairPanel {
     const chipGap = 8;
     const sectionPadX = 20;
 
+    // Show only the head until it's fully repaired — body parts unlock after.
+    const headRepaired = game.isPartRepaired('head');
     for (const part of ALL_PARTS) {
+      if (part !== 'head' && !headRepaired) continue;
       const reqs = PART_REQS[part];
       const progress = game.save.partProgress[part];
       const repaired = game.isPartRepaired(part);
@@ -73,10 +77,15 @@ export class RepairPanel {
       const sectionStroke = repaired ? '#5a7a4a' : '#2a232b';
       rect(ctx, px + sectionPadX, y, pw - sectionPadX * 2, partH, sectionFill, sectionStroke);
 
-      // Header
-      text(ctx, PART_LABEL[part], px + sectionPadX + 12, y + 8, {
+      // Header — part name + the passive benefit it unlocks
+      text(ctx, PART_LABEL[part], px + sectionPadX + 12, y + 6, {
         size: 14,
         color: '#c9b9a4',
+      });
+      text(ctx, `→ ${PART_BENEFIT[part]}`, px + sectionPadX + 12, y + 22, {
+        size: 10,
+        color: repaired ? '#9ed79a' : '#7c6f5e',
+        font: "'Special Elite', monospace",
       });
       text(ctx, repaired ? '✓ repaired' : 'incomplete', px + pw - sectionPadX - 12, y + 10, {
         align: 'right',
@@ -91,6 +100,8 @@ export class RepairPanel {
       for (const kind of ALL_ITEMS) {
         const need = reqs[kind] ?? 0;
         if (need === 0) continue;
+        // Voice box is pre-installed and not lootable — hide its chip entirely.
+        if (kind === 'voice_box') continue;
         const have = progress[kind] ?? 0;
         const banked = game.save.banked[kind];
         const isMet = have >= need;
