@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Don't Go In There</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Inter+Tight:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        height: 100%;
+        background: #07070b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter Tight', system-ui, sans-serif;
+        color: #c9b9a4;
+        user-select: none;
+      }
+      .wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+      #game {
+        display: block;
+        background: #0e0c10;
+        border: 1px solid #1a1620;
+        cursor: crosshair;
+        image-rendering: pixelated;
+      }
+      .hud {
+        font-size: 12px;
+        opacity: 0.55;
+        letter-spacing: 0.5px;
+        font-family: 'Special Elite', monospace;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-JSylQHBJ.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <canvas id="game" width="960" height="640"></canvas>
+      <div class="hud">WASD move &middot; Space interact &middot; 1-4 drop carried &middot; Click parts to repair &middot; Don't get caught</div>
+    </div>
+  </body>
+</html>
