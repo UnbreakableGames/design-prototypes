@@ -18,12 +18,23 @@ export class ItemPickup {
     this.bob = Math.random() * Math.PI * 2;
   }
 
-  update(dt: number): void {
+  update(dt: number, isWalkableFn?: (x: number, y: number) => boolean): void {
     this.bob += dt * 2;
     if (this.vx !== 0 || this.vy !== 0) {
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
-      const decay = Math.pow(0.0008, dt); // very fast decay; ~0.6s settle
+      // Per-axis movement so a wall on one axis doesn't kill the other
+      const stepX = this.vx * dt;
+      const stepY = this.vy * dt;
+      if (!isWalkableFn || isWalkableFn(this.x + stepX, this.y)) {
+        this.x += stepX;
+      } else {
+        this.vx = 0;
+      }
+      if (!isWalkableFn || isWalkableFn(this.x, this.y + stepY)) {
+        this.y += stepY;
+      } else {
+        this.vy = 0;
+      }
+      const decay = Math.pow(0.0008, dt);
       this.vx *= decay;
       this.vy *= decay;
       if (Math.abs(this.vx) < 1) this.vx = 0;

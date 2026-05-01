@@ -1,10 +1,21 @@
 import type { Game } from '../game/Game';
-import { ALL_PARTS, ITEM_LABEL, PART_LABEL, PART_REQUIRES, ITEM_COLOR, type PartKey } from '../types';
+import {
+  ALL_ITEMS,
+  ALL_PARTS,
+  ITEM_COLOR,
+  ITEM_LABEL,
+  PART_LABEL,
+  PART_REQS,
+  type ItemKind,
+  type PartKey,
+} from '../types';
 import { rect, text, pointInRect, W, H } from '../systems/Render';
+
+type ChipRect = { part: PartKey; kind: ItemKind; rect: { x: number; y: number; w: number; h: number } };
 
 export class RepairPanel {
   open = false;
-  private rowRects: { part: PartKey; rect: { x: number; y: number; w: number; h: number } }[] = [];
+  private chipRects: ChipRect[] = [];
   private closeRect = { x: 0, y: 0, w: 0, h: 0 };
 
   toggle() {
@@ -17,12 +28,11 @@ export class RepairPanel {
 
   render(ctx: CanvasRenderingContext2D, game: Game): void {
     if (!this.open) return;
-    // backdrop
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
     ctx.fillRect(0, 0, W, H);
 
-    const pw = 460;
-    const ph = 360;
+    const pw = 540;
+    const ph = 460;
     const px = (W - pw) / 2;
     const py = (H - ph) / 2;
     rect(ctx, px, py, pw, ph, '#15101a', '#3a2c1a');
@@ -38,36 +48,99 @@ export class RepairPanel {
       size: 18,
       color: '#c9b9a4',
     });
+    text(ctx, 'click a requirement chip to install one item from the chest', px + pw / 2, py + 68, {
+      align: 'center',
+      size: 11,
+      color: '#7c6f5e',
+      font: "'Special Elite', monospace",
+    });
 
-    this.rowRects = [];
-    let y = py + 84;
-    for (const p of ALL_PARTS) {
-      const need = PART_REQUIRES[p];
-      const have = game.save.banked[need];
-      const repaired = game.save.parts[p];
-      const r = { x: px + 24, y, w: pw - 48, h: 48 };
-      const fill = repaired ? '#1a2418' : have > 0 ? '#1f1820' : '#150f17';
-      rect(ctx, r.x, r.y, r.w, r.h, fill, '#2a232b');
+    this.chipRects = [];
+    let y = py + 92;
+    const partH = 76;
+    const chipW = 100;
+    const chipH = 30;
+    const chipGap = 8;
+    const sectionPadX = 20;
 
-      // color swatch for required item
-      rect(ctx, r.x + 10, r.y + 12, 24, 24, ITEM_COLOR[need], '#0a0608');
+    for (const part of ALL_PARTS) {
+      const reqs = PART_REQS[part];
+      const progress = game.save.partProgress[part];
+      const repaired = game.isPartRepaired(part);
 
-      const status = repaired ? 'repaired' : have > 0 ? 'click to install' : 'need item';
-      const statusColor = repaired ? '#7ea76b' : have > 0 ? '#c9b9a4' : '#7a4030';
-      text(ctx, PART_LABEL[p], r.x + 44, r.y + 8, { color: '#c9b9a4', size: 14 });
-      text(ctx, `requires ${ITEM_LABEL[need]} · banked: ${have}`, r.x + 44, r.y + 28, {
-        color: '#7c6f5e',
-        size: 11,
+      // Section background
+      const sectionFill = repaired ? '#1a2418' : '#1a1218';
+      const sectionStroke = repaired ? '#5a7a4a' : '#2a232b';
+      rect(ctx, px + sectionPadX, y, pw - sectionPadX * 2, partH, sectionFill, sectionStroke);
+
+      // Header
+      text(ctx, PART_LABEL[part], px + sectionPadX + 12, y + 8, {
+        size: 14,
+        color: '#c9b9a4',
       });
-      text(ctx, status, r.x + r.w - 12, r.y + 18, {
+      text(ctx, repaired ? '✓ repaired' : 'incomplete', px + pw - sectionPadX - 12, y + 10, {
         align: 'right',
-        size: 12,
-        color: statusColor,
+        size: 11,
+        color: repaired ? '#9ed79a' : '#7a4030',
         font: "'Special Elite', monospace",
       });
 
-      this.rowRects.push({ part: p, rect: r });
-      y += 56;
+      // Chips for each required kind
+      let cx = px + sectionPadX + 12;
+      const cy = y + 36;
+      for (const kind of ALL_ITEMS) {
+        const need = reqs[kind] ?? 0;
+        if (need === 0) continue;
+        const have = progress[kind] ?? 0;
+        const banked = game.save.banked[kind];
+        const isMet = have >= need;
+        const canInstall = !isMet && banked > 0;
+
+        // Chip body
+        const baseColor = ITEM_COLOR[kind];
+        const fill = isMet
+          ? baseColor
+          : canInstall
+            ? `${baseColor}55`
+            : `${baseColor}22`;
+        const stroke = canInstall ? baseColor : '#2a232b';
+        rect(ctx, cx, cy, chipW, chipH, fill, stroke);
+
+        // Kind label + count
+        const labelColor = isMet ? '#0a0608' : canInstall ? '#e8d9b8' : '#5a4836';
+        text(ctx, ITEM_LABEL[kind], cx + 8, cy + 5, {
+          size: 11,
+          color: labelColor,
+          font: "'Special Elite', monospace",
+        });
+        text(ctx, `${have}/${need}`, cx + chipW - 8, cy + 5, {
+          align: 'right',
+          size: 11,
+          color: labelColor,
+          font: "'Special Elite', monospace",
+        });
+        // Banked count below (only when relevant)
+        if (!isMet) {
+          text(ctx, `chest ${banked}`, cx + chipW / 2, cy + 18, {
+            align: 'center',
+            size: 9,
+            color: canInstall ? '#c9b9a4' : '#5a4836',
+            font: "'Special Elite', monospace",
+          });
+        } else {
+          text(ctx, 'installed', cx + chipW / 2, cy + 18, {
+            align: 'center',
+            size: 9,
+            color: '#0a0608',
+            font: "'Special Elite', monospace",
+          });
+        }
+
+        this.chipRects.push({ part, kind, rect: { x: cx, y: cy, w: chipW, h: chipH } });
+        cx += chipW + chipGap;
+      }
+
+      y += partH + 8;
     }
 
     this.closeRect = { x: px + pw - 92, y: py + ph - 38, w: 76, h: 26 };
@@ -86,13 +159,9 @@ export class RepairPanel {
       this.close();
       return true;
     }
-    for (const row of this.rowRects) {
-      if (pointInRect(x, y, row.rect.x, row.rect.y, row.rect.w, row.rect.h)) {
-        if (game.save.parts[row.part]) return true;
-        const need = PART_REQUIRES[row.part];
-        if (game.spend(need, 1)) {
-          game.repair(row.part);
-        }
+    for (const chip of this.chipRects) {
+      if (pointInRect(x, y, chip.rect.x, chip.rect.y, chip.rect.w, chip.rect.h)) {
+        game.installItem(chip.part, chip.kind);
         return true;
       }
     }

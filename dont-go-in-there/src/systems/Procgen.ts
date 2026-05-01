@@ -1,5 +1,5 @@
 import { Rng } from './Rng';
-import { ALL_ITEMS, type ItemKind } from '../types';
+import { GENERIC_ITEMS, UNIQUE_ITEMS, type ItemKind } from '../types';
 
 export type Room = {
   id: number;
@@ -71,7 +71,7 @@ export type BasementMap = {
   hazards: Hazard[];
   items: ItemSpawn[];
   exits: Exit[];
-  stalkerWaypoints: WaypointPath;
+  stalkerPaths: WaypointPath[];
   startX: number;
   startY: number;
   worldW: number;
@@ -88,9 +88,9 @@ export function generate(seed: number, depth: number): BasementMap {
   let cursorX = 80;
   let maxBottom = 0;
   for (let i = 0; i < numRooms; i++) {
-    const w = Math.round(rng.range(440, 600) / 32) * 32;
-    const h = Math.round(rng.range(340, 460) / 32) * 32;
-    const yJitter = i === 0 ? 0 : rng.int(-60, 100);
+    const w = Math.round(rng.range(880, 1200) / 32) * 32;
+    const h = Math.round(rng.range(680, 920) / 32) * 32;
+    const yJitter = i === 0 ? 0 : rng.int(-120, 200);
     const y = 80 + yJitter;
     rooms.push({ id: i, x: cursorX, y, w, h, isConnector: false });
     cursorX += w;
@@ -104,12 +104,12 @@ export function generate(seed: number, depth: number): BasementMap {
     const sharedTop = Math.max(a.y, b.y);
     const sharedBot = Math.min(a.y + a.h, b.y + b.h);
     const shared = sharedBot - sharedTop;
-    const opening = Math.min(180, Math.max(80, shared - 60));
-    const oy = sharedTop + (shared - opening) / 2 + rng.range(-20, 20);
-    const cw = 120;
+    const opening = Math.min(360, Math.max(160, shared - 120));
+    const oy = sharedTop + (shared - opening) / 2 + rng.range(-30, 30);
+    const cw = 180;
     rooms.push({
       id: 100 + i,
-      x: a.x + a.w - 60,
+      x: a.x + a.w - 90,
       y: oy,
       w: cw,
       h: opening,
@@ -124,9 +124,9 @@ export function generate(seed: number, depth: number): BasementMap {
   const obstacles: Obstacle[] = [];
   for (const r of rooms) {
     if (r.isConnector) continue;
-    const target = 6 + rng.int(0, 6);
+    const target = 14 + rng.int(0, 10);
     let attempts = 0;
-    while (obstacles.filter((o) => inRoom(o, r)).length < target && attempts < 80) {
+    while (obstacles.filter((o) => inRoom(o, r)).length < target && attempts < 160) {
       attempts++;
       const kind = rng.pick<ObstacleKind>(['box', 'crate', 'shelf', 'pipe', 'furniture', 'pillar']);
       const sz = obstacleSize(kind, rng);
@@ -140,11 +140,11 @@ export function generate(seed: number, depth: number): BasementMap {
     }
   }
 
-  // Containers — 1-2 per main room, placed so they don't block exits/connectors
+  // Containers — 3-5 per main room, placed so they don't block exits/connectors
   const mainRooms = rooms.filter((r) => !r.isConnector);
   const containers: ContainerSpec[] = [];
   for (const r of mainRooms) {
-    const count = 1 + rng.int(0, 2);
+    const count = 3 + rng.int(0, 3);
     for (let i = 0; i < count; i++) {
       const kind = rng.pick<ContainerKind>(['toolbox', 'locker', 'cabinet']);
       const sz = containerSize(kind);
@@ -180,19 +180,14 @@ export function generate(seed: number, depth: number): BasementMap {
   const exits: Exit[] = [];
   // Try with comfortable spacing first; relax if room runs out.
   for (const dir of dirOrder) {
-    let placed = tryPlace(rng, mainRooms, blockers, exits, 200, 28);
+    let placed = tryPlace(rng, mainRooms, blockers, exits, 360, 28);
+    if (!placed) placed = tryPlace(rng, mainRooms, blockers, exits, 240, 28);
     if (!placed) placed = tryPlace(rng, mainRooms, blockers, exits, 140, 28);
-    if (!placed) placed = tryPlace(rng, mainRooms, blockers, exits, 80, 28);
     if (placed) exits.push({ ...placed, dir });
   }
 
-  // Items — 2-4 scattered, deeper-biased rarity
-  const itemCount = 2 + rng.int(0, 3);
+  // No scattered ground items — every item lives inside a container.
   const items: ItemSpawn[] = [];
-  for (let i = 0; i < itemCount; i++) {
-    const placed = tryPlace(rng, mainRooms, blockers, [], 0, 18);
-    if (placed) items.push({ ...placed, kind: pickItemKind(rng, depth) });
-  }
 
   // Hazards — 0-2 creaky tiles
   const hazardCount = rng.int(0, 3);
@@ -202,52 +197,117 @@ export function generate(seed: number, depth: number): BasementMap {
     if (placed) hazards.push({ x: placed.x - 14, y: placed.y - 14, w: 28, h: 28, kind: 'creak' });
   }
 
-  // Stalker patrol — a coherent tour through every main room in spatial order,
-  // 1-2 waypoints per room, spaced apart so the path is legible.
-  const stalkerWaypoints: WaypointPath = [];
+  // Stalker patrols — 2 stalkers, each with its own coherent route. Their
+  // spawn points (path[0]) are placed far apart first so the two enemies
+  // don't start side-by-side, then each path adds 2-4 more waypoints scattered
+  // through the rooms.
   const sortedMain = [...mainRooms].sort((a, b) => a.x - b.x);
-  for (const r of sortedMain) {
-    const count = 1 + rng.int(0, 2);
-    for (let i = 0; i < count; i++) {
-      const placed = tryPlace(rng, [r], blockers, stalkerWaypoints, 100, 22);
-      if (placed) stalkerWaypoints.push(placed);
-    }
+  const NUM_STALKERS = 2;
+  const stalkerSpawns: { x: number; y: number }[] = [];
+  for (let s = 0; s < NUM_STALKERS; s++) {
+    const minSpacing = s === 0 ? 0 : 350;
+    let placed = tryPlace(rng, sortedMain, blockers, stalkerSpawns, minSpacing, 22);
+    if (!placed) placed = tryPlace(rng, sortedMain, blockers, stalkerSpawns, 220, 22);
+    if (!placed) placed = tryPlace(rng, sortedMain, blockers, stalkerSpawns, 0, 22);
+    if (placed) stalkerSpawns.push(placed);
   }
-  while (stalkerWaypoints.length < 2) {
-    const placed = tryPlace(rng, mainRooms, blockers, stalkerWaypoints, 0, 22);
-    if (placed) stalkerWaypoints.push(placed);
-    else break;
+  const stalkerPaths: WaypointPath[] = [];
+  for (const spawn of stalkerSpawns) {
+    const path: WaypointPath = [spawn];
+    const extra = 2 + rng.int(0, 3);
+    for (let i = 0; i < extra; i++) {
+      const r = rng.pick(sortedMain);
+      const placed = tryPlace(rng, [r], blockers, path, 220, 22);
+      if (placed) path.push(placed);
+    }
+    while (path.length < 2) {
+      const placed = tryPlace(rng, sortedMain, blockers, path, 0, 22);
+      if (placed) path.push(placed);
+      else break;
+    }
+    stalkerPaths.push(path);
   }
 
-  // Player start: walkable, far from every exit, far from stalker first waypoint
+  // Player start: walkable, clear of obstacles/containers, far from every exit,
+  // far from the stalker spawn AND with line-of-sight to it broken (something
+  // between them) so the stalker can't see the player on the very first frame.
+  // Pad of 16 means the player's center is at least 16 units from any blocker —
+  // larger than the player radius (10) so the body never clips into a wall.
+  const startMinExitDist = 360;
+  const losMap = { rooms, obstacles, containers } as BasementMap;
+
+  const findSpawn = (
+    minStalkerDist: number,
+    minExitDist: number,
+    requireLosBlocked: boolean,
+  ): { x: number; y: number } | null => {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const r = rng.pick(mainRooms);
+      const x = r.x + rng.range(40, r.w - 40);
+      const y = r.y + rng.range(40, r.h - 40);
+      if (pointInObstacle(x, y, blockers, 16)) continue;
+      let ok = true;
+      for (const e of exits) {
+        if (Math.hypot(e.x - x, e.y - y) < minExitDist) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      let okStalkers = true;
+      for (const ss of stalkerSpawns) {
+        if (Math.hypot(ss.x - x, ss.y - y) < minStalkerDist) {
+          okStalkers = false;
+          break;
+        }
+        if (requireLosBlocked && hasLineOfSight(losMap, ss.x, ss.y, x, y)) {
+          okStalkers = false;
+          break;
+        }
+      }
+      if (!okStalkers) continue;
+      return { x, y };
+    }
+    return null;
+  };
+
   let startX = 0;
   let startY = 0;
-  const startMinExitDist = 240;
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const r = rng.pick(mainRooms);
-    const x = r.x + rng.range(40, r.w - 40);
-    const y = r.y + rng.range(40, r.h - 40);
-    if (pointInObstacle(x, y, blockers, 14)) continue;
-    let ok = true;
-    for (const e of exits) {
-      if (Math.hypot(e.x - x, e.y - y) < startMinExitDist) {
-        ok = false;
-        break;
+  // Progressive relaxation: in tight single-room layouts the strict constraints
+  // can't all be met, so we step down. The stalker's vision range is 120, so
+  // even the loosest stage (140) keeps the player just outside detection range.
+  const found =
+    findSpawn(280, startMinExitDist, true) ??
+    findSpawn(280, startMinExitDist, false) ??
+    findSpawn(220, 280, false) ??
+    findSpawn(160, 200, false);
+  if (found) {
+    startX = found.x;
+    startY = found.y;
+  } else {
+    // Final fallback: pick the walkable cell that's farthest from the stalker
+    // spawn — guarantees we don't start inside an obstacle, and stays as far
+    // from the stalker as the geometry allows.
+    let bestDist = -1;
+    for (const r of mainRooms) {
+      for (let yy = r.y + 30; yy < r.y + r.h - 30; yy += 16) {
+        for (let xx = r.x + 30; xx < r.x + r.w - 30; xx += 16) {
+          if (pointInObstacle(xx, yy, blockers, 16)) continue;
+          // Prefer the cell whose closest stalker is farthest away
+          let nearest = Infinity;
+          for (const ss of stalkerSpawns) {
+            const d = Math.hypot(ss.x - xx, ss.y - yy);
+            if (d < nearest) nearest = d;
+          }
+          if (nearest === Infinity) nearest = 0;
+          if (nearest > bestDist) {
+            bestDist = nearest;
+            startX = xx;
+            startY = yy;
+          }
+        }
       }
     }
-    if (!ok) continue;
-    if (stalkerWaypoints.length > 0) {
-      const wp = stalkerWaypoints[0]!;
-      if (Math.hypot(wp.x - x, wp.y - y) < 180) continue;
-    }
-    startX = x;
-    startY = y;
-    break;
-  }
-  if (startX === 0 && startY === 0) {
-    const r = mainRooms[0]!;
-    startX = r.x + r.w / 2;
-    startY = r.y + r.h / 2;
   }
 
   return {
@@ -259,7 +319,7 @@ export function generate(seed: number, depth: number): BasementMap {
     hazards,
     items,
     exits,
-    stalkerWaypoints,
+    stalkerPaths,
     startX,
     startY,
     worldW,
@@ -392,12 +452,13 @@ function tryPlace(
 }
 
 function pickItemKind(rng: Rng, depth: number): ItemKind {
-  const bias = Math.min(0.45, 0.1 * depth);
-  const idx =
-    rng.next() < bias
-      ? Math.min(ALL_ITEMS.length - 1, ALL_ITEMS.length - 1 - rng.int(0, 2))
-      : rng.int(0, ALL_ITEMS.length);
-  return ALL_ITEMS[idx]!;
+  // Unique "body" items are rare on shallow floors and increasingly common
+  // deeper down — incentive to descend if you're missing one. Cap at ~40%.
+  const uniqueRate = Math.min(0.4, 0.06 + depth * 0.06);
+  if (rng.next() < uniqueRate) {
+    return rng.pick(UNIQUE_ITEMS);
+  }
+  return rng.pick(GENERIC_ITEMS);
 }
 
 export function isWalkable(map: BasementMap, x: number, y: number): boolean {

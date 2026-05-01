@@ -7,8 +7,9 @@ import { Workbench } from '../entities/Workbench';
 import { Chest } from '../entities/Chest';
 import { BasementDoor } from '../entities/BasementDoor';
 import { RepairPanel } from '../ui/RepairPanel';
+import { DialogPanel } from '../ui/DialogPanel';
 import { rect, text, vignette, W, H, pointInRect } from '../systems/Render';
-import { ALL_ITEMS, ITEM_COLOR, ITEM_LABEL, totalItems } from '../types';
+import { ALL_ITEMS, ALL_PARTS, ITEM_COLOR, ITEM_LABEL, totalItems, type PartKey } from '../types';
 
 const ROOM: Rect = { x: 80, y: 80, w: W - 160, h: H - 160 };
 
@@ -19,6 +20,7 @@ export class Bedroom implements Scene {
   private chest = new Chest(ROOM.x + ROOM.w - 90, ROOM.y + ROOM.h - 80);
   private door = new BasementDoor(ROOM.x + ROOM.w - 70, ROOM.y + 30);
   private repair = new RepairPanel();
+  private dialog = new DialogPanel();
   private chestOpen = false;
   private resetConfirm = false;
   private resetTimer = 0;
@@ -35,15 +37,30 @@ export class Bedroom implements Scene {
 
   update(dt: number, input: Input, game: Game): void {
     this.flicker += dt;
+    this.friend.update(dt);
     if (this.resetConfirm) {
       this.resetTimer -= dt;
       if (this.resetTimer <= 0) this.resetConfirm = false;
     }
     if (input.pressed('Escape')) {
       this.repair.close();
+      this.dialog.close();
       this.chestOpen = false;
       this.resetConfirm = false;
     }
+
+    // Dialog has priority for input — number keys pick choices.
+    if (this.dialog.open) {
+      for (let i = 1; i <= 9; i++) {
+        if (input.pressed(`Digit${i}`)) {
+          this.dialog.pickChoiceByIndex(i - 1, game);
+          break;
+        }
+      }
+      if (this.dialog.consumeRepairRequest()) this.repair.open = true;
+      return;
+    }
+    if (this.dialog.consumeRepairRequest()) this.repair.open = true;
     if (this.repair.open || this.chestOpen) return;
 
     this.player.update(dt, input, this.walls(), ROOM);
@@ -54,12 +71,14 @@ export class Bedroom implements Scene {
     const nearChest = this.player.near(this.chest.x + this.chest.w / 2, this.chest.y + this.chest.h / 2, 50);
     const nearDoor = this.player.near(this.door.x + this.door.w / 2, this.door.y + this.door.h / 2, 60);
 
-    if (nearFriend) this.hint = '[space] repair friend';
-    else if (nearChest) this.hint = '[space] open chest';
+    if (nearFriend) {
+      const wantsToTalk = !game.save.metFriend || game.save.pendingReturn;
+      this.hint = wantsToTalk ? '[space] talk to friend (...)' : '[space] talk to friend';
+    } else if (nearChest) this.hint = '[space] open chest';
     else if (nearDoor) this.hint = '[space] go to the basement';
 
     if (input.pressed('Space')) {
-      if (nearFriend) this.repair.open = true;
+      if (nearFriend) this.dialog.begin(game);
       else if (nearChest) this.chestOpen = true;
       else if (nearDoor) game.switchScene('basement');
     }
@@ -92,10 +111,16 @@ export class Bedroom implements Scene {
     });
 
     this.workbench.render(ctx);
-    this.friend.render(ctx, game.save.parts);
+    const repairedFlags = {} as Record<PartKey, boolean>;
+    for (const p of ALL_PARTS) repairedFlags[p] = game.isPartRepaired(p);
+    this.friend.render(ctx, repairedFlags);
     this.chest.render(ctx);
     this.door.render(ctx);
     this.player.render(ctx);
+
+    // Ambient floating text from the friend — suppressed while any panel is up.
+    const panelOpen = this.repair.open || this.dialog.open || this.chestOpen;
+    this.friend.renderAmbient(ctx, panelOpen);
 
     // soft vignette + flicker
     const flickerAmt = 0.5 + Math.sin(this.flicker * 8) * 0.04 + Math.sin(this.flicker * 1.7) * 0.03;
@@ -107,7 +132,7 @@ export class Bedroom implements Scene {
       color: '#7a3030',
       font: "'Special Elite', monospace",
     });
-    const repaired = Object.values(game.save.parts).filter(Boolean).length;
+    const repaired = ALL_PARTS.filter((p) => game.isPartRepaired(p)).length;
     text(ctx, `friend repaired: ${repaired}/4   ·   deepest reached: ${game.save.deepestReached}`, 16, 40, {
       size: 11,
       color: '#7c6f5e',
@@ -127,6 +152,7 @@ export class Bedroom implements Scene {
 
     if (this.chestOpen) this.renderChest(ctx, game);
     this.repair.render(ctx, game);
+    this.dialog.render(ctx, game);
   }
 
   private renderResetButton(ctx: CanvasRenderingContext2D) {
@@ -214,6 +240,10 @@ export class Bedroom implements Scene {
   private lastCloseRect = { x: 0, y: 0, w: 0, h: 0 };
 
   onClick(x: number, y: number, game: Game): void {
+    if (this.dialog.onClick(x, y, game)) {
+      if (this.dialog.consumeRepairRequest()) this.repair.open = true;
+      return;
+    }
     if (this.repair.onClick(x, y, game)) return;
     if (this.chestOpen) {
       if (pointInRect(x, y, this.lastCloseRect.x, this.lastCloseRect.y, this.lastCloseRect.w, this.lastCloseRect.h)) {

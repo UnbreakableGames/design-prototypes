@@ -3,7 +3,16 @@ import * as Persistence from '../systems/Persistence';
 import { Bedroom } from '../scenes/Bedroom';
 import { Basement } from '../scenes/Basement';
 import type { Scene } from '../scenes/Scene';
-import { freshSave, type Inventory, type ItemKind, type PartKey, type SaveState, emptyInventory } from '../types';
+import {
+  freshSave,
+  isPartRepaired,
+  PART_REQS,
+  type Inventory,
+  type ItemKind,
+  type PartKey,
+  type SaveState,
+  emptyInventory,
+} from '../types';
 
 export type SceneName = 'bedroom' | 'basement';
 
@@ -51,7 +60,23 @@ export class Game {
       this.save.banked[k] += this.carried[k];
       this.carried[k] = 0;
     }
+    // Successful escape — friend will have something to say next time.
+    this.save.pendingReturn = true;
     this.persist();
+  }
+
+  markMet(): void {
+    if (!this.save.metFriend) {
+      this.save.metFriend = true;
+      this.persist();
+    }
+  }
+
+  ackReturn(): void {
+    if (this.save.pendingReturn) {
+      this.save.pendingReturn = false;
+      this.persist();
+    }
   }
 
   loseCarried(): void {
@@ -64,9 +89,25 @@ export class Game {
     return true;
   }
 
-  repair(part: PartKey): void {
-    this.save.parts[part] = true;
+  // Install one item of `kind` toward `part`'s requirement. Returns true if
+  // the install happened, false if the part is already at max for that kind
+  // or there's nothing in the chest.
+  installItem(part: PartKey, kind: ItemKind): boolean {
+    const reqs = PART_REQS[part];
+    const need = reqs[kind] ?? 0;
+    if (need === 0) return false;
+    const progress = this.save.partProgress[part];
+    const have = progress[kind] ?? 0;
+    if (have >= need) return false;
+    if (this.save.banked[kind] < 1) return false;
+    this.save.banked[kind] -= 1;
+    progress[kind] = have + 1;
     this.persist();
+    return true;
+  }
+
+  isPartRepaired(part: PartKey): boolean {
+    return isPartRepaired(this.save.partProgress[part], PART_REQS[part]);
   }
 
   recordDepth(d: number): void {
