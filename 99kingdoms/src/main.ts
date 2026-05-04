@@ -13,7 +13,9 @@ function frame(now: number) {
   last = now;
   game.update(dt);
   if (game.wantsRestart) {
-    game = new Game(canvas);
+    const opts = game.pendingRestartOptions ?? undefined;
+    game.destroy();
+    game = new Game(canvas, opts);
     exposeDebug(game);
   }
   game.render(ctx!);

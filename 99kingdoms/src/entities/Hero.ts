@@ -30,6 +30,11 @@ export class Hero {
   invulnTimer = 0;
   hitFlash = 0;
   respawnTimer = 0;
+  /** True on the most recent frame in which the player held a WASD key
+   *  and the hero physically advanced. Used to gate "settled near a
+   *  building" UI like coin pips so they only show when the player has
+   *  actually stopped to interact. */
+  isMoving = false;
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -87,6 +92,7 @@ export class Hero {
     if (input.held('KeyD') || input.held('ArrowRight')) dx += 1;
 
     const moving = dx !== 0 || dy !== 0;
+    this.isMoving = moving;
     if (moving) {
       const len = Math.hypot(dx, dy);
       dx /= len;

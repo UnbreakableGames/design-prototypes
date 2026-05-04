@@ -5,3 +5,8 @@ dist
 
 # Build artifacts
 99kingdoms-itch.zip
+what-the-dark-knows.zip
+
+# Secrets — anon key goes in a committed example, real creds stay local.
+.env
+.env.local

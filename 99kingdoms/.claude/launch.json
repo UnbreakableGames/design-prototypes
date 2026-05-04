@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "99kingdoms-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/andrew/code/design-prototypes/99kingdoms && npx vite --port 5173 --host 127.0.0.1"
+      ],
+      "port": 5173
+    }
+  ]
+}

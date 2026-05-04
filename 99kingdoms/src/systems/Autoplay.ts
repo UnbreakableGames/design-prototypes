@@ -82,11 +82,6 @@ export class Autoplay {
     this._bindGame(game);
     this.t += dt;
 
-    if (game.shopOpen) {
-      this.autoPickShop(game);
-      return;
-    }
-
     const keys = (game.input as unknown as { keys: Set<string> }).keys;
     const justDown = (game.input as unknown as { justDown: Set<string> }).justDown;
     ['KeyW', 'KeyA', 'KeyS', 'KeyD'].forEach((k) => keys.delete(k));
@@ -379,7 +374,7 @@ export class Autoplay {
     for (const s of game.stations) {
       if (s.active) continue;
       if (s.kind === 'wall') continue;
-      if (!prereqMet(s.kind, game.stations, game.campfire.level)) continue;
+      if (!prereqMet(s.kind, game.stations, game.campfire.level, game.relicsFound)) continue;
       if (coin < STATION_STATS[s.kind].cost) continue;
       const prio = Autoplay.BUILD_PRIORITY[s.kind] ?? 10;
       if (prio < bestPrio) {
@@ -399,7 +394,7 @@ export class Autoplay {
 
     // Campfire upgrade.
     const cfCost = game.campfire.nextUpgradeCost();
-    if (cfCost !== null && !game.campfire.upgradeBlockReason(game.stations) && coin >= cfCost && game.campfire.readyTimer <= 0) {
+    if (cfCost !== null && !game.campfire.upgradeBlockReason(game.stations, game.relicsFound) && coin >= cfCost && game.campfire.readyTimer <= 0) {
       const targetLevel = game.campfire.level + 1;
       return {
         kind: 'upgrade-cf',
@@ -598,24 +593,6 @@ export class Autoplay {
     return this.station(stationId);
   }
 
-  private autoPickShop(game: Game) {
-    if (!game.shopOpen) return;
-    const offers = game.shopOffers;
-    let cheapestIdx = -1;
-    let cheapestCost = Infinity;
-    for (let i = 0; i < offers.length; i++) {
-      if (offers[i].cost <= game.resources.coin && offers[i].cost < cheapestCost) {
-        cheapestCost = offers[i].cost;
-        cheapestIdx = i;
-      }
-    }
-    const anyGame = game as unknown as { closeShop: () => void };
-    if (cheapestIdx >= 0) {
-      game.resources.coin -= offers[cheapestIdx].cost;
-      offers[cheapestIdx].apply(game);
-    }
-    anyGame.closeShop();
-  }
 
   /**
    * Find a cluster of coins to collect as one unit. We pick the closest coin,

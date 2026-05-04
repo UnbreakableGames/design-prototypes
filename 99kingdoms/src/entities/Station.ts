@@ -23,45 +23,88 @@ export interface StationStats {
 }
 
 export const STATION_STATS: Record<StationKind, StationStats> = {
-  gather:   { cost: 5,  workRange: 9999, workInterval: 5.0,  name: 'Gather post', color: '#8a6236', placementRadius: 16, maxHp: 30, capacity: 1, hireCost: 2, power: 1 },
+  gather:   { cost: 5,  workRange: 9999, workInterval: 5.0,  name: "Forester's hut", color: '#5a7a3a', placementRadius: 16, maxHp: 30, capacity: 1, hireCost: 2, power: 1 },
   tower:    { cost: 10, workRange: 160, workInterval: 1.6,  name: 'Watchtower',  color: '#aaa5b8', placementRadius: 18, maxHp: 40, capacity: 1, hireCost: 2, power: 2 },
   wall:     { cost: 2,  workRange: 0,   workInterval: 0,    name: 'Wall',        color: '#6b4a2b', placementRadius: 13, maxHp: 20, capacity: 0, hireCost: 0, power: 0 },
   farm:     { cost: 8,  workRange: 0,   workInterval: 8.0,  name: 'Farm',        color: '#6ed678', placementRadius: 16, maxHp: 25, capacity: 0, hireCost: 0, power: 1 },
   workshop: { cost: 8,  workRange: 320, workInterval: 1.5,  name: 'Workshop',    color: '#b06840', placementRadius: 17, maxHp: 35, capacity: 1, hireCost: 3, power: 2 },
-  barracks: { cost: 12, workRange: 220, workInterval: 0.55, name: 'Barracks',    color: '#5a6e8a', placementRadius: 18, maxHp: 45, capacity: 1, hireCost: 4, power: 2 },
-  garrison: { cost: 10, workRange: 0,   workInterval: 0.6,  name: 'Garrison',    color: '#6a7088', placementRadius: 18, maxHp: 40, capacity: 4, hireCost: 3, power: 2 },
+  // Internal kind codes are unchanged (`'barracks'` / `'garrison'`) so
+  // the AI handlers `updateKnight` (chase) and `updateGuard` (wall
+  // defense) keep firing for the same stations. The user-facing labels
+  // were swapped:  barracks-the-kind now reads "Stables" and produces
+  // patrolling Knights; garrison-the-kind now reads "Barracks" and
+  // produces wall-defending Soldiers.
+  barracks: { cost: 12, workRange: 220, workInterval: 0.55, name: 'Stables',  color: '#5a6e8a', placementRadius: 18, maxHp: 45, capacity: 1, hireCost: 4, power: 2 },
+  garrison: { cost: 10, workRange: 0,   workInterval: 0.6,  name: 'Barracks', color: '#6a7088', placementRadius: 18, maxHp: 40, capacity: 4, hireCost: 3, power: 2 },
   blacksmith: { cost: 10, workRange: 0, workInterval: 0,    name: 'Blacksmith',  color: '#c7a060', placementRadius: 17, maxHp: 40, capacity: 0, hireCost: 0, power: 0 },
 };
 
 /**
  * Tech tree: each building requires an active instance of its prerequisite
- * kind before the player can see / pay for it. Campfire (and gather post,
- * the root economy) are always available.
+ * kind before the player can see / pay for it. Some buildings ALSO require
+ * a relic to be found in the wilds — the relic is the unlock and replaces
+ * the need for any campfire-level gate on those buildings.
  */
 export interface Prereq {
   station: StationKind | null;
   campfireLevel: number;
+  /** When set, the matching `relicsFound[building]` flag must be true
+   *  before this station becomes constructible. The relic POI is
+   *  authored in `POIInstances.ts` with `unlocksBuilding: <key>`.
+   *
+   *  Buildings that use this gate skip the campfire-level requirement —
+   *  the relic is the sole gate. The player has to earn the unlock by
+   *  exploring the wilds. */
+  buildingRelic?: 'workshop' | 'blacksmith' | 'stables';
 }
 
 export const PREREQS: Record<StationKind, Prereq> = {
   gather:     { station: null,       campfireLevel: 1 },
   wall:       { station: null,       campfireLevel: 1 },
-  tower:      { station: 'gather',   campfireLevel: 1 },
-  workshop:   { station: 'tower',    campfireLevel: 1 },
+  // Watchtower has no station-chain prereq — both forester's hut and
+  // watchtower are available from the start, so the player can pick
+  // their first build (combat or economy) instead of being railroaded
+  // into the forester's hut as a stepping stone.
+  tower:      { station: null,       campfireLevel: 1 },
   farm:       { station: 'tower',    campfireLevel: 1 },
   garrison:   { station: 'tower',    campfireLevel: 1 },
-  barracks:   { station: 'garrison', campfireLevel: 2 },
-  blacksmith: { station: 'tower',    campfireLevel: 1 },
+  // Workshop, blacksmith, and barracks-the-kind (display "Stables")
+  // need BOTH gates satisfied — the campfire must be at L2 AND the
+  // matching relic must be found. The relic alone isn't enough; the
+  // campfire upgrade is the player committing to mid-game, the relic
+  // is them earning a specific build through exploration. The two
+  // requirements compound the late-game pacing.
+  workshop:   { station: 'tower',    campfireLevel: 2, buildingRelic: 'workshop' },
+  blacksmith: { station: 'tower',    campfireLevel: 2, buildingRelic: 'blacksmith' },
+  barracks:   { station: 'garrison', campfireLevel: 2, buildingRelic: 'stables' },
+};
+
+export interface RelicsFoundFlags {
+  l2: boolean;
+  l3: boolean;
+  workshop: boolean;
+  blacksmith: boolean;
+  stables: boolean;
+}
+
+const NO_RELICS_FOUND: RelicsFoundFlags = {
+  l2: false,
+  l3: false,
+  workshop: false,
+  blacksmith: false,
+  stables: false,
 };
 
 export function prereqMet(
   kind: StationKind,
   stations: Station[],
   campfireLevel: number,
+  relicsFound: RelicsFoundFlags = NO_RELICS_FOUND,
 ): boolean {
   const req = PREREQS[kind];
   if (req.campfireLevel > campfireLevel) return false;
   if (req.station && !stations.some((s) => s.kind === req.station && s.active)) return false;
+  if (req.buildingRelic && !relicsFound[req.buildingRelic]) return false;
   return true;
 }
 

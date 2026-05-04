@@ -5,17 +5,37 @@ import {
 } from '../entities/Hero';
 import { WorldMap, Decoration } from '../world/Map';
 import { ResourceNode } from '../entities/ResourceNode';
-import { Campfire } from '../entities/Campfire';
+import { Campfire, CAMPFIRE_AURA_PULSE_PERIOD, CAMPFIRE_AURA_INTERVAL, CAMPFIRE_LEVELS } from '../entities/Campfire';
 import { Clock } from '../game/Clock';
 import { Enemy, ENEMY_STATS } from '../entities/Enemy';
 import { Recruit, RECRUIT_RADIUS, RESCUE_COST } from '../entities/Recruit';
-import { Station, StationKind, STATION_STATS, effectiveStats, nextUpgradeCost, MAX_STATION_LEVEL, hireAnchorOffset, upgradeAnchorOffset, prereqMet, stationUpgradeBlockReason, describeNextUpgrade } from '../entities/Station';
+import { Station, StationKind, STATION_STATS, effectiveStats, nextUpgradeCost, MAX_STATION_LEVEL, hireAnchorOffset, upgradeAnchorOffset, prereqMet, stationUpgradeBlockReason, describeNextUpgrade, RelicsFoundFlags, PREREQS } from '../entities/Station';
 import { Projectile } from '../entities/Projectile';
 import { Coin } from '../entities/Coin';
 import { FlyingCoin, flyingCoinPos } from '../entities/FlyingCoin';
 import { Portal, PORTAL_RADIUS } from '../entities/Portal';
-import { POI, POI_INTERACT_DURATION, POI_LABELS, POI_HINTS } from '../entities/POI';
+import { POI, POI_INTERACT_DURATION } from '../entities/POI';
+import { poiInstance } from '../game/POIInstances';
+import type { NoteCard } from '../game/Narrative';
+import {
+  ForgeState,
+  ForgeTrack,
+  FORGE_TRACKS,
+  tierOf,
+  anyTierUnlocked,
+} from '../game/BlacksmithUpgrades';
 import { UI_COLORS, UI_FONTS, drawSmallCaps, drawCoinIcon } from '../ui/HUD';
+import { drawKbdDark } from '../ui/MenuUI';
+import {
+  CHARCOAL,
+  CHARCOAL_FONTS,
+  handLine,
+  handRect,
+  handCircle,
+  crossHatch,
+  handText,
+  inkSplatter,
+} from './HandDrawn';
 
 export function drawWorld(ctx: CanvasRenderingContext2D, map: WorldMap, hero: Hero) {
   ctx.fillStyle = '#7bc96f';
@@ -129,144 +149,334 @@ export function drawAttackFlash(ctx: CanvasRenderingContext2D, hero: Hero, range
   ctx.restore();
 }
 
-// Small strip of consumable buttons shown just below the campfire when the
-// hero is close enough to buy one. Each button shows its hotkey, cost, and an
-// affordability state. Active effects (flare / rally) render their own status
-// chip above the campfire.
-export function drawConsumableChips(
+/**
+ * Renders the blacksmith's whetstone purchase indicator: a row of cost
+ * pips above the building when the upgrade is unbought AND the hero is
+ * settled near it. Once bought, no overlay is rendered (the focus
+ * panel + lasting +damage stat is the proof). Mirrors the lantern-hook
+ * pip pattern.
+ */
+export function drawWhetstoneOverlay(
   ctx: CanvasRenderingContext2D,
-  consumables: Array<{
-    id: string;
-    label: string;
-    cost: number;
-    keyHint: string;
-    tint: string;
-  }>,
-  fire: { x: number; y: number },
-  hero: { x: number; y: number },
+  smith: Station,
+  hero: Hero,
+  cost: number,
+  paidProgress: number,
+  bought: boolean,
+  heroIsSettled: boolean,
+) {
+  if (bought) return;
+  const dHero = Math.hypot(smith.x - hero.x, smith.y - hero.y);
+  // 56 ≈ BUILD_PAY_RANGE + a little buffer.
+  if (dHero >= 56 || !heroIsSettled) return;
+  // Pip row above the blacksmith — same offset as upgrade pips.
+  drawCostSlots(ctx, smith.x, smith.y - 50, paidProgress, cost);
+}
+
+/**
+ * Renders the lantern hook beside the campfire. The hook holds the
+ * lantern when extinguished (warm ember inside, ready to be re-lit),
+ * and shows an empty iron loop when the player has carried it off.
+ * The duration bar lives on the player while they carry it (see
+ * `drawHeroLantern`).
+ */
+export function drawLanternHook(
+  ctx: CanvasRenderingContext2D,
+  fire: Campfire,
+  hero: Hero,
   coin: number,
-  showRadius: number,
-  flareTime: number,
-  rallyTime: number,
+  cost: number,
+  fullDuration: number,
+  timeLeft: number,
+  paidProgress: number,
+  heroIsSettled: boolean,
+  payRange: number,
 ) {
-  const d = Math.hypot(fire.x - hero.x, fire.y - hero.y);
-  if (d > showRadius) return;
+  const ax = fire.x + 28;
+  const ay = fire.y + 14;
+  const carrying = timeLeft > 0;
 
-  const gap = 6;
-  const chipW = 84;
-  const chipH = 34;
-  const totalW = consumables.length * chipW + (consumables.length - 1) * gap;
-  const startX = fire.x - totalW / 2;
-  const y = fire.y + 28;
+  // Small wooden post.
+  ctx.save();
+  ctx.fillStyle = '#3a2a18';
+  ctx.fillRect(ax - 1.2, ay - 12, 2.4, 14);
 
-  for (let i = 0; i < consumables.length; i++) {
-    const c = consumables[i];
-    const x = startX + i * (chipW + gap);
-    const isActive =
-      (c.id === 'flare' && flareTime > 0) ||
-      (c.id === 'rally' && rallyTime > 0);
-    const affordable = coin >= c.cost && !isActive;
-
-    ctx.save();
-    if (isActive) ctx.globalAlpha = 0.55;
-    ctx.fillStyle = affordable ? 'rgba(12, 14, 22, 0.92)' : 'rgba(12, 14, 22, 0.7)';
-    ctx.fillRect(x, y, chipW, chipH);
-    ctx.fillStyle = affordable ? c.tint : 'rgba(154, 149, 137, 0.6)';
-    ctx.fillRect(x, y, chipW, 2);
-
-    // Keybind box.
-    ctx.fillStyle = affordable ? 'rgba(39, 42, 61, 0.9)' : 'rgba(20, 22, 34, 0.8)';
-    ctx.fillRect(x + 6, y + 6, 14, 14);
-    ctx.strokeStyle = affordable
-      ? 'rgba(234, 223, 196, 0.3)'
-      : 'rgba(154, 149, 137, 0.2)';
+  if (carrying) {
+    // Hook is empty — just the bare iron loop where the lantern
+    // hangs. A small dim "O" tells the player "the lantern is gone,
+    // I'm carrying it."
+    ctx.strokeStyle = 'rgba(140,130,114,0.7)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 6.5, y + 6.5, 13, 13);
-    ctx.fillStyle = affordable ? UI_COLORS.cream : UI_COLORS.inkDim;
-    ctx.font = `700 10px ${UI_FONTS.mono}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(c.keyHint, x + 13, y + 14);
-
-    // Label.
-    ctx.fillStyle = affordable ? c.tint : UI_COLORS.inkDim;
-    ctx.font = `italic 700 12px ${UI_FONTS.serif}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(c.label, x + 24, y + 16);
-
-    // Cost or "active" status row.
-    ctx.fillStyle = isActive
-      ? c.tint
-      : affordable
-      ? UI_COLORS.gold
-      : UI_COLORS.red;
-    ctx.font = `700 9px ${UI_FONTS.mono}`;
-    ctx.fillText(isActive ? 'ACTIVE' : `${c.cost}c`, x + 24, y + 28);
-
-    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(ax, ay - 14, 2.4, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    // Hook holds the lantern, waiting to be re-lit. Same iron-cage
+    // sprite the player will see at their hip once paid.
+    ctx.fillStyle = '#1a1410';
+    ctx.fillRect(ax - 4, ay - 18, 8, 8);
+    ctx.fillStyle = 'rgba(214, 138, 58, 0.22)';
+    ctx.beginPath();
+    ctx.arc(ax, ay - 14, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    handRect(ctx, ax - 4, ay - 18, 8, 8, {
+      seed: 7780,
+      jitter: 0.4,
+      samplesPerSide: 6,
+      stroke: 'rgba(232,226,212,0.6)',
+      strokeWidth: 0.7,
+      opacity: 0.9,
+    });
   }
+  ctx.restore();
+
+  // Pip row renders when the hero is inside the lantern pay zone AND
+  // the lantern is extinguished AND they've stopped to interact.
+  const dCf = Math.hypot(fire.x - hero.x, fire.y - hero.y);
+  if (dCf < payRange && heroIsSettled && !carrying) {
+    drawCostSlots(ctx, ax, ay - 30, paidProgress, cost);
+  }
+  void coin;
+  void fullDuration;
 }
 
-export function drawActiveConsumableStatus(
+/**
+ * Draws a small lit lantern at the hero's hip + a duration bar above
+ * the hero's head, while `timeLeft > 0`. The lantern is on the player
+ * now — its status reads where the player's eye already is.
+ */
+export function drawHeroLantern(
   ctx: CanvasRenderingContext2D,
-  fire: { x: number; y: number },
-  flareTime: number,
-  rallyTime: number,
+  hero: Hero,
+  timeLeft: number,
+  fullDuration: number,
 ) {
-  const active: Array<{ label: string; remaining: number; tint: string }> = [];
-  if (flareTime > 0) active.push({ label: 'Flare', remaining: flareTime, tint: '#ffe082' });
-  if (rallyTime > 0) active.push({ label: 'Rally', remaining: rallyTime, tint: '#4da6ff' });
-  if (active.length === 0) return;
+  if (timeLeft <= 0) return;
+  if (hero.respawnTimer > 0) return;
+  const litT = Math.min(1, timeLeft / fullDuration);
 
-  const chipW = 82;
-  const chipH = 18;
-  const gap = 6;
-  const totalW = active.length * chipW + (active.length - 1) * gap;
-  const startX = fire.x - totalW / 2;
-  const y = fire.y - 56;
+  // Hip-side lantern: small iron cage with a strap from the hero's
+  // body. Ember inside whose intensity tracks remaining duration.
+  const hx = hero.x + 9;
+  const hy = hero.y + 4;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(58, 42, 24, 0.85)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(hero.x + 4, hero.y + 1);
+  ctx.lineTo(hx, hy - 4);
+  ctx.stroke();
+  // Iron cage body.
+  ctx.fillStyle = '#1a1410';
+  ctx.fillRect(hx - 3, hy - 4, 6, 6);
+  // Ember inside — bright halo around it.
+  ctx.shadowColor = `rgba(255, 200, 110, ${0.7 + litT * 0.3})`;
+  ctx.shadowBlur = 6 + litT * 4;
+  ctx.fillStyle = `rgba(255, 210, 120, ${0.75 + litT * 0.25})`;
+  ctx.beginPath();
+  ctx.arc(hx, hy - 1, 1.3 + litT * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // Hand-drawn outline.
+  ctx.strokeStyle = 'rgba(232,226,212,0.7)';
+  ctx.lineWidth = 0.7;
+  ctx.strokeRect(hx - 3 + 0.5, hy - 4 + 0.5, 5, 5);
+  ctx.restore();
 
-  for (let i = 0; i < active.length; i++) {
-    const a = active[i];
-    const x = startX + i * (chipW + gap);
-    ctx.save();
-    ctx.fillStyle = 'rgba(12, 14, 22, 0.92)';
-    ctx.fillRect(x, y, chipW, chipH);
-    ctx.fillStyle = a.tint;
-    ctx.fillRect(x, y, 2, chipH);
-    ctx.fillStyle = a.tint;
-    ctx.font = `italic 700 11px ${UI_FONTS.serif}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(a.label, x + 8, y + chipH / 2);
-    ctx.fillStyle = UI_COLORS.creamDim;
-    ctx.font = `500 9.5px ${UI_FONTS.mono}`;
-    ctx.textAlign = 'right';
-    ctx.fillText(`${a.remaining.toFixed(1)}s`, x + chipW - 6, y + chipH / 2);
-    ctx.restore();
-  }
+  // Duration bar above the head.
+  const barW = 18;
+  const barH = 2;
+  const bx = hero.x - barW / 2;
+  const by = hero.y - hero.radius - 7;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 6, 5, 0.9)';
+  ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+  ctx.fillStyle = 'rgba(232,226,212,0.18)';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = '#d68a3a';
+  ctx.fillRect(bx, by, barW * litT, barH);
+  ctx.restore();
 }
 
-export function drawBurnFx(
+/**
+ * Draws a beacon over every undiscovered relic POI. Two layers:
+ *
+ *   1. **Always-visible distant star** — a small pulsing dot at the
+ *      relic's screen position, visible from anywhere on the map.
+ *      Lets the player see "something is out there" without needing
+ *      to wander into proximity range first.
+ *
+ *   2. **Close-range halo** — once the hero is within `HINT_RANGE`,
+ *      a warm radial gradient grows brighter as the player approaches.
+ *      This is the "you're getting warmer" tell.
+ *
+ * Both layers render AFTER the fog overlay so they punch through
+ * unexplored darkness — relics are special enough to be seen from
+ * far away.
+ */
+export function drawRelicHints(
   ctx: CanvasRenderingContext2D,
-  fire: { x: number; y: number },
-  time: number,
-  duration: number,
+  pois: POI[],
+  hero: Hero,
+  cameraX: number,
+  cameraY: number,
+  viewW: number,
+  viewH: number,
+) {
+  const HINT_RANGE = 700;
+  const HINT_RANGE_2 = HINT_RANGE * HINT_RANGE;
+  ctx.save();
+  for (const poi of pois) {
+    if (poi.claimed) continue;
+    const inst = poiInstance(poi.instanceId);
+    if (!inst || inst.category !== 'relic') continue;
+    const sx = poi.x - cameraX;
+    const sy = poi.y - cameraY;
+    const onScreen =
+      sx >= -120 && sx <= viewW + 120 && sy >= -120 && sy <= viewH + 120;
+    const pulse = 0.6 + Math.sin(performance.now() / 400) * 0.4;
+
+    // Off-screen: render an edge-pip on the screen border in the
+    // direction of the relic. Lets the player see "a relic is that
+    // way" from spawn even if it's 1000+ units off-screen.
+    if (!onScreen) {
+      drawRelicEdgePip(ctx, sx, sy, viewW, viewH, pulse);
+      continue;
+    }
+
+    const dx = poi.x - hero.x;
+    const dy = poi.y - hero.y;
+    const d2 = dx * dx + dy * dy;
+
+    // Layer 1: always-visible distant star. Tiny, slow pulse, visible
+    // regardless of distance so the player can see relics from across
+    // the map. The brightness floor gives "there's a relic over there"
+    // even from spawn.
+    {
+      const farAlpha = 0.5 * pulse;
+      ctx.fillStyle = `rgba(255, 220, 140, ${farAlpha})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.0 + 0.9 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Layer 2: close-range halo, only inside HINT_RANGE.
+    if (d2 <= HINT_RANGE_2) {
+      const t = 1 - d2 / HINT_RANGE_2;
+      const alpha = 0.32 * t * pulse;
+      const r = 84;
+      const grad = ctx.createRadialGradient(sx, sy, 6, sx, sy, r);
+      grad.addColorStop(0, `rgba(255, 200, 110, ${alpha * 1.4})`);
+      grad.addColorStop(0.5, `rgba(214, 138, 58, ${alpha * 0.55})`);
+      grad.addColorStop(1, 'rgba(214, 138, 58, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+      // Brighter centre ember when close — replaces the distant star
+      // so it doesn't double-render at the same spot.
+      ctx.fillStyle = `rgba(255, 230, 150, ${Math.min(1, 0.55 + alpha * 2)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.6 + 1.5 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/** Render a small ember chevron at the screen edge pointing toward an
+ *  off-screen relic. Computes the intersection of the line from screen
+ *  center to the relic's screen position with the canvas border. */
+function drawRelicEdgePip(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  viewW: number,
+  viewH: number,
+  pulse: number,
+) {
+  const cx = viewW / 2;
+  const cy = viewH / 2;
+  const dx = sx - cx;
+  const dy = sy - cy;
+  if (dx === 0 && dy === 0) return;
+  // Inset from the canvas edge so the pip isn't clipped by the body
+  // bezel + so it visually reads as "in the world."
+  const padX = 18;
+  const padY = 18;
+  // Find the t along [center → relic] where the ray exits the inset
+  // rectangle. The smallest positive t along x or y is our exit edge.
+  const tx = dx > 0 ? (viewW - padX - cx) / dx : dx < 0 ? (padX - cx) / dx : Infinity;
+  const ty = dy > 0 ? (viewH - padY - cy) / dy : dy < 0 ? (padY - cy) / dy : Infinity;
+  const t = Math.min(tx, ty);
+  const ex = cx + dx * t;
+  const ey = cy + dy * t;
+  const angle = Math.atan2(dy, dx);
+
+  ctx.save();
+  // Soft halo behind the pip so it's legible against any background.
+  const haloAlpha = 0.45 * pulse;
+  const haloGrad = ctx.createRadialGradient(ex, ey, 2, ex, ey, 18);
+  haloGrad.addColorStop(0, `rgba(255, 200, 110, ${haloAlpha})`);
+  haloGrad.addColorStop(1, 'rgba(214, 138, 58, 0)');
+  ctx.fillStyle = haloGrad;
+  ctx.beginPath();
+  ctx.arc(ex, ey, 18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bright ember dot at the screen-edge anchor.
+  ctx.fillStyle = `rgba(255, 220, 140, ${0.85 * pulse})`;
+  ctx.beginPath();
+  ctx.arc(ex, ey, 3 + 1.2 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Chevron pointing in the relic's direction.
+  ctx.translate(ex, ey);
+  ctx.rotate(angle);
+  ctx.fillStyle = `rgba(255, 230, 150, ${0.7 * pulse})`;
+  ctx.beginPath();
+  ctx.moveTo(7, 0);
+  ctx.lineTo(0, -4);
+  ctx.lineTo(2, 0);
+  ctx.lineTo(0, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** While the lantern is lit the hero gets a soft ember halo, pulsing
+ *  slightly with the remaining duration so the player feels it ticking
+ *  down. Drawn at world position so it follows the hero through the
+ *  camera transform. */
+export function drawLanternHalo(
+  ctx: CanvasRenderingContext2D,
+  hero: Hero,
+  timeLeft: number,
+  fullDuration: number,
   radius: number,
 ) {
-  const t = 1 - time / duration;
-  const alpha = Math.max(0, 1 - t);
+  if (timeLeft <= 0) return;
+  if (hero.respawnTimer > 0) return;
+  const t = timeLeft / fullDuration;
+  const pulse = 0.85 + Math.sin(performance.now() / 220) * 0.06;
   ctx.save();
-  ctx.strokeStyle = `rgba(255, 90, 90, ${0.85 * alpha})`;
-  ctx.lineWidth = 4;
+  // Outer ring — bright at full charge, dimmer near out.
+  const grad = ctx.createRadialGradient(hero.x, hero.y, radius * 0.2, hero.x, hero.y, radius);
+  grad.addColorStop(0, `rgba(255, 200, 110, ${0.18 * t * pulse})`);
+  grad.addColorStop(0.6, `rgba(214, 138, 58, ${0.10 * t * pulse})`);
+  grad.addColorStop(1, 'rgba(214, 138, 58, 0)');
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(fire.x, fire.y, radius * t, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = `rgba(255, 154, 85, ${0.5 * alpha})`;
-  ctx.lineWidth = 2;
+  ctx.arc(hero.x, hero.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  // Crisp ring at the edge — the kill-zone boundary.
+  ctx.strokeStyle = `rgba(255, 200, 110, ${0.45 * t})`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 5]);
   ctx.beginPath();
-  ctx.arc(fire.x, fire.y, radius * t * 0.85, 0, Math.PI * 2);
+  ctx.arc(hero.x, hero.y, radius, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.setLineDash([]);
   ctx.restore();
 }
 
@@ -276,18 +486,172 @@ export function drawCampfireUpgradeHint(
   hero: Hero,
   stations: Station[],
   isNight: boolean,
+  relicsFound: { l2: boolean; l3: boolean },
+  heroIsSettled: boolean,
 ) {
+  if (!heroIsSettled) return;
   const nextCost = fire.nextUpgradeCost();
   if (nextCost === null) return;
   if (isNight) return;
-  if (fire.upgradeBlockReason(stations) !== null) return;
+  if (fire.upgradeBlockReason(stations, relicsFound) !== null) return;
   if (fire.readyTimer > 0) return;
   const d = Math.hypot(fire.x - hero.x, fire.y - hero.y);
   if (d > INDICATOR_RADIUS) return;
   drawUpgradeSlots(ctx, fire.x, fire.y - 38, fire.upgradeProgress, nextCost, fire.level + 1);
 }
 
+/**
+ * Renders the three-track forge overlay above an active blacksmith:
+ *
+ *     1·ARCHERS   ▲ ▲ ▽            (selected)
+ *     2·SOLDIERS  ▲ ▽ ▽
+ *     3·KNIGHTS   ▽ ▽ ▽
+ *
+ * Each row shows three chevron slots — filled (ember) for tiers bought,
+ * hollow (bone-dim) for tiers locked. The currently-selected track gets
+ * a brighter row + a small pip strip showing in-progress coins paid
+ * toward the next tier. When the player isn't near, the overlay fades
+ * to a hint-level alpha so it stays present without being noisy.
+ */
+export function drawForgeOverlay(
+  ctx: CanvasRenderingContext2D,
+  smith: Station,
+  forge: ForgeState,
+  hero: Hero,
+  heroIsSettled: boolean,
+) {
+  // Hide entirely until the player has unlocked their first tier via a
+  // POI. The blacksmith stands as a building from the moment it's
+  // placed, but its chevron status board only appears after the player
+  // has earned something to display. This keeps the mechanic a
+  // surprise that reveals on first claim.
+  if (!anyTierUnlocked(forge)) return;
+  void heroIsSettled;
+
+  const dx = smith.x - hero.x;
+  const dy = smith.y - hero.y;
+  const d = Math.hypot(dx, dy);
+  const closeness = d > 130 ? 0 : 1 - Math.min(1, Math.max(0, (d - 50) / 80));
+  const baseAlpha = 0.55 + closeness * 0.45;
+
+  const ax = smith.x;
+  const topY = smith.y - 50;
+  const rowH = 13;
+
+  const tracks: ForgeTrack[] = ['archer', 'soldier', 'knight'];
+  ctx.save();
+  ctx.globalAlpha *= baseAlpha;
+
+  for (let i = 0; i < tracks.length; i++) {
+    const track = tracks[i];
+    const spec = FORGE_TRACKS[track];
+    const tier = tierOf(forge, track);
+    const y = topY + i * rowH;
+
+    // Track label (no hotkey now — tracks aren't selectable). Show in
+    // ember if this track has any tier earned, dim if zero.
+    const earned = tier > 0;
+    handText(ctx, spec.label.toUpperCase(), ax - 12, y + 4, {
+      seed: 7400 + i * 17,
+      jitter: 0.2,
+      fontSize: 7.5,
+      font: CHARCOAL_FONTS.mono,
+      fill: earned ? CHARCOAL.ember : 'rgba(232,226,212,0.5)',
+      weight: 700,
+      letterSpacing: 1.2,
+      align: 'right',
+    });
+
+    // Three chevron slots representing tiers 1/2/3 — filled if earned.
+    const chevX0 = ax - 6;
+    for (let t = 0; t < 3; t++) {
+      const cx = chevX0 + t * 9;
+      const filled = tier > t;
+      drawForgeChevron(
+        ctx,
+        cx,
+        y,
+        filled,
+        filled,
+        CHARCOAL.ember,
+        7400 + i * 17 + t,
+      );
+    }
+  }
+  ctx.restore();
+}
+
+function drawForgeChevron(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  filled: boolean,
+  highlight: boolean,
+  pulseColor: string,
+  seed: number,
+) {
+  ctx.save();
+  if (filled) {
+    if (highlight) {
+      ctx.shadowColor = pulseColor;
+      ctx.shadowBlur = 4;
+    }
+    ctx.fillStyle = pulseColor;
+  } else {
+    ctx.fillStyle = 'rgba(232,226,212,0.20)';
+  }
+  // Hand-drawn upward chevron — three points with a tiny jitter.
+  const jx = ((seed * 9301 + 49297) % 233280) / 233280 - 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 3 + jx * 0.6, cy + 2);
+  ctx.lineTo(cx + jx * 0.4, cy - 2.5);
+  ctx.lineTo(cx + 3 + jx * 0.6, cy + 2);
+  ctx.closePath();
+  ctx.fill();
+  if (filled && highlight) ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
 export function drawCampfire(ctx: CanvasRenderingContext2D, fire: Campfire) {
+  // ── Aura visualisation ────────────────────────────────────────────
+  // The campfire damages any enemy inside its aura radius. The boundary
+  // is always legible — a persistent bright dashed warm ring marks the
+  // damage zone. A slow ~10-second sine pulse adds a warmer overlay on
+  // the same ring so the fire reads as "breathing." The pulse is
+  // intentionally decoupled from the damage tick cadence — ticks happen
+  // a few times a second, but that'd strobe; this breathes.
+  const auraR = fire.auraRadius + Math.sin(fire.flicker) * 1.5;
+  // Smooth sine from 0 → 1 → 0 over the pulse period. Using `(1-cos)/2`
+  // lands at 0 at phase 0 and 1 at phase period/2, both ends continuous.
+  const pulseFrac =
+    0.5 * (1 - Math.cos((2 * Math.PI * fire.auraPulsePhase) / CAMPFIRE_AURA_PULSE_PERIOD));
+  ctx.save();
+  // Faint warm disc that leaks outward toward the aura radius.
+  const auraFill = ctx.createRadialGradient(fire.x, fire.y, auraR * 0.55, fire.x, fire.y, auraR);
+  auraFill.addColorStop(0, 'rgba(255, 180, 90, 0)');
+  auraFill.addColorStop(0.85, 'rgba(255, 170, 80, 0.06)');
+  auraFill.addColorStop(1, 'rgba(255, 140, 60, 0)');
+  ctx.fillStyle = auraFill;
+  ctx.fillRect(fire.x - auraR, fire.y - auraR, auraR * 2, auraR * 2);
+  // 1) Persistent baseline ring — bright enough to read clearly at a
+  //    glance, so the player never has to squint for the damage zone.
+  ctx.strokeStyle = 'rgba(255, 195, 110, 0.65)';
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.arc(fire.x, fire.y, auraR, 0, Math.PI * 2);
+  ctx.stroke();
+  // 2) Slow warm overlay — same ring, alpha driven by the 10s sine
+  //    pulse. Sits on top of the baseline so the ring gently breathes
+  //    in and out of full brightness.
+  ctx.strokeStyle = `rgba(255, 220, 150, ${pulseFrac * 0.5})`;
+  ctx.lineWidth = 1.75;
+  ctx.beginPath();
+  ctx.arc(fire.x, fire.y, auraR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
   const glowR = 34 + Math.sin(fire.flicker) * 2;
   const glow = ctx.createRadialGradient(fire.x, fire.y, 4, fire.x, fire.y, glowR);
   glow.addColorStop(0, 'rgba(255, 180, 80, 0.65)');
@@ -409,15 +773,188 @@ function bodyColor(kind: Enemy['kind'], flash: boolean): string {
   }
 }
 
-export function drawRecruits(ctx: CanvasRenderingContext2D, recruits: Recruit[]) {
-  for (const r of recruits) drawRecruit(ctx, r);
+export function drawRecruits(
+  ctx: CanvasRenderingContext2D,
+  recruits: Recruit[],
+  stations: Station[],
+) {
+  // Build a quick lookup so the per-recruit draw can reflect the
+  // assigned station's kind without an O(n*m) scan.
+  const stationById = new Map<number, Station>();
+  for (const s of stations) stationById.set(s.id, s);
+  for (const r of recruits) {
+    const station = r.stationId !== null ? stationById.get(r.stationId) : undefined;
+    drawRecruit(ctx, r, station ? station.kind : null);
+  }
+}
+
+/**
+ * Per-job visual config for recruits. Each entry tweaks the body fill,
+ * outline, head color, and an optional small glyph that hints at the
+ * villager's role (axe / bow / sword / shield + sword / hammer). The
+ * "wandering" + "idle" states fall back to neutral palettes.
+ */
+type RecruitJob =
+  | 'wandering'
+  | 'idle'
+  | 'gather'
+  | 'tower'
+  | 'barracks'
+  | 'garrison'
+  | 'workshop';
+
+interface RecruitJobLook {
+  body: string;
+  outline: string;
+  hair: string;
+  /** Drawn at the recruit's right shoulder/hip after the body. */
+  drawTool?: (ctx: CanvasRenderingContext2D, x: number, y: number) => void;
+}
+
+const RECRUIT_LOOKS: Record<RecruitJob, RecruitJobLook> = {
+  // Drab grey-tan, looks underfed. The "?" callout above already says
+  // "rescue me"; the body just confirms they're still wild.
+  wandering: { body: '#d8cbb4', outline: '#7a6a4f', hair: '#7a6a4f' },
+  // Warm cream — they've been brought in, fed, are loitering at camp.
+  idle:      { body: '#ffe9a8', outline: '#2a1a0a', hair: '#6b4a2b' },
+  // Earth brown — foresters wear hard-wearing canvas; the axe over
+  // the shoulder is for clearing space, not chopping for coin.
+  gather: {
+    body: '#c2956a', outline: '#3a2310', hair: '#5a3a1c',
+    drawTool: drawAxeOnShoulder,
+  },
+  // Forest green — archers wear dark cloth so the bow doesn't catch
+  // the eye of the thing they're aiming at.
+  tower: {
+    body: '#7a8c5a', outline: '#2a3210', hair: '#4a3818',
+    drawTool: drawBowOnBack,
+  },
+  // Steel blue — barracks soldiers are the camp's mid-line; they
+  // chase enemies into range and trade hits.
+  barracks: {
+    body: '#6a7c98', outline: '#1a2030', hair: '#2a2418',
+    drawTool: drawSwordAtHip,
+  },
+  // Iron grey + mail dots — knights stand the wall.
+  garrison: {
+    body: '#9aa0a8', outline: '#1a1c20', hair: '#3a3018',
+    drawTool: drawShieldAndSword,
+  },
+  // Rust orange — workshop builders carry the dirty toolwork.
+  workshop: {
+    body: '#c2774a', outline: '#3a1a08', hair: '#4a2a18',
+    drawTool: drawHammerAtHip,
+  },
+};
+
+function recruitJobFor(r: Recruit, stationKind: StationKind | null): RecruitJob {
+  if (r.status === 'wandering') return 'wandering';
+  if (!stationKind) return 'idle';
+  switch (stationKind) {
+    case 'gather': return 'gather';
+    case 'tower': return 'tower';
+    case 'barracks': return 'barracks';
+    case 'garrison': return 'garrison';
+    case 'workshop': return 'workshop';
+    default: return 'idle';
+  }
+}
+
+// ── Tool overlay sprites (tiny hand-drawn glyphs) ─────────────────────
+
+function drawAxeOnShoulder(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Haft over the right shoulder, head poking up.
+  ctx.save();
+  ctx.strokeStyle = '#3a2310';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y - 4);
+  ctx.lineTo(x + 8, y - 12);
+  ctx.stroke();
+  ctx.fillStyle = '#a8a8a8';
+  ctx.beginPath();
+  ctx.moveTo(x + 7, y - 13);
+  ctx.lineTo(x + 11, y - 11);
+  ctx.lineTo(x + 9, y - 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBowOnBack(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Bow curve diagonal across the back, plus a tiny string.
+  ctx.save();
+  ctx.strokeStyle = '#5a3a1c';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(x + 1, y - 4, 7, -0.7, 0.7);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(232,226,212,0.7)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x + 6.5, y - 8);
+  ctx.lineTo(x + 6.5, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSwordAtHip(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Sword pommel + scabbard on the right hip.
+  ctx.save();
+  ctx.fillStyle = '#1a1c20';
+  ctx.fillRect(x + 5, y + 1, 1.4, 8);
+  ctx.fillStyle = '#c0c0c8';
+  ctx.beginPath();
+  ctx.arc(x + 5.7, y + 1, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1a1c20';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawShieldAndSword(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Sword on right hip + small round shield on left arm.
+  drawSwordAtHip(ctx, x, y);
+  ctx.save();
+  ctx.fillStyle = '#5a3018';
+  ctx.beginPath();
+  ctx.arc(x - 6, y + 2, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1a0e08';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // Shield boss.
+  ctx.fillStyle = '#c0c0c8';
+  ctx.beginPath();
+  ctx.arc(x - 6, y + 2, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHammerAtHip(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Wooden haft, square iron head.
+  ctx.save();
+  ctx.fillStyle = '#5a3a1c';
+  ctx.fillRect(x + 4.5, y + 1, 1.4, 7);
+  ctx.fillStyle = '#7a7a82';
+  ctx.fillRect(x + 4, y - 1, 3, 3);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 0.6;
+  ctx.strokeRect(x + 4, y - 1, 3, 3);
+  ctx.restore();
 }
 
 export function drawWandererSlots(
   ctx: CanvasRenderingContext2D,
   recruits: Recruit[],
   hero: Hero,
+  heroIsSettled: boolean,
 ) {
+  if (!heroIsSettled) return;
   for (const r of recruits) {
     if (r.status !== 'wandering') continue;
     if (Math.hypot(r.x - hero.x, r.y - hero.y) > INDICATOR_RADIUS) continue;
@@ -425,26 +962,47 @@ export function drawWandererSlots(
   }
 }
 
-function drawRecruit(ctx: CanvasRenderingContext2D, r: Recruit) {
+function drawRecruit(
+  ctx: CanvasRenderingContext2D,
+  r: Recruit,
+  stationKind: StationKind | null,
+) {
   const wandering = r.status === 'wandering';
-  ctx.fillStyle = wandering ? '#d8cbb4' : '#ffe9a8';
+  const job = recruitJobFor(r, stationKind);
+  const look = RECRUIT_LOOKS[job];
+
+  ctx.fillStyle = look.body;
   ctx.beginPath();
   ctx.arc(r.x, r.y, RECRUIT_RADIUS, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = wandering ? '#7a6a4f' : '#2a1a0a';
+  ctx.strokeStyle = look.outline;
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  ctx.fillStyle = wandering ? '#7a6a4f' : '#6b4a2b';
+  // Hair / hat strip — sits on top of the head.
+  ctx.fillStyle = look.hair;
   ctx.beginPath();
   ctx.ellipse(r.x, r.y - RECRUIT_RADIUS, 6, 3, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // Mail dots for knights — three small grey dots across the chest.
+  if (job === 'garrison') {
+    ctx.fillStyle = '#c0c0c8';
+    ctx.beginPath();
+    ctx.arc(r.x - 2, r.y + 1, 0.7, 0, Math.PI * 2);
+    ctx.arc(r.x, r.y + 1.5, 0.7, 0, Math.PI * 2);
+    ctx.arc(r.x + 2, r.y + 1, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.fillStyle = '#000';
   ctx.beginPath();
   ctx.arc(r.x - 1.8, r.y, 0.8, 0, Math.PI * 2);
   ctx.arc(r.x + 1.8, r.y, 0.8, 0, Math.PI * 2);
   ctx.fill();
+
+  // Tool overlay (axe, bow, sword, shield, hammer) — only for jobs.
+  if (look.drawTool) look.drawTool(ctx, r.x, r.y);
 
   if (wandering) {
     ctx.fillStyle = 'rgba(255, 230, 120, 0.9)';
@@ -489,6 +1047,19 @@ function drawRecruit(ctx: CanvasRenderingContext2D, r: Recruit) {
 
 const INDICATOR_RADIUS = 130;
 
+/** Whether the station's footprint should appear in the layout at all.
+ *  Hidden until the campfire-level requirement is met — that gate is
+ *  the "this part of the base exists" tier marker. The relic and
+ *  station-chain gates leave the footprint visible-but-dimmed once
+ *  visibility kicks in, so the player can see what they're working
+ *  toward. */
+function isStationFootprintVisible(
+  kind: StationKind,
+  campfireLevel: number,
+): boolean {
+  return PREREQS[kind].campfireLevel <= campfireLevel;
+}
+
 export function drawStations(
   ctx: CanvasRenderingContext2D,
   stations: Station[],
@@ -496,28 +1067,45 @@ export function drawStations(
   hero: Hero,
   campfireLevel: number,
   isNight: boolean,
+  heroIsSettled: boolean,
+  relicsFound: RelicsFoundFlags,
 ) {
+  // Body pass — render every station whose campfire-level requirement
+  // is met. Stations gated above the current campfire tier are hidden
+  // entirely (no footprint, no focus panel). Stations that meet the
+  // tier but fail another gate (relic missing, chain prereq missing)
+  // appear at 0.4 alpha so the player can see what they're working
+  // toward.
   for (const s of stations) {
-    if (!prereqMet(s.kind, stations, campfireLevel)) continue;
+    if (!isStationFootprintVisible(s.kind, campfireLevel)) continue;
+    const met = prereqMet(s.kind, stations, campfireLevel, relicsFound);
+    ctx.save();
+    if (!met) ctx.globalAlpha *= 0.4;
     drawStation(ctx, s.kind, s.x, s.y, !s.active);
+    ctx.restore();
   }
+  // Overlay pass — pip rows, hire dots, settling pulses, etc. only
+  // render when the prereq is met (otherwise the player would see
+  // payment surfaces for a station they can't build).
   for (const s of stations) {
-    if (!prereqMet(s.kind, stations, campfireLevel)) continue;
+    if (!prereqMet(s.kind, stations, campfireLevel, relicsFound)) continue;
     const nearEnough =
       Math.hypot(s.x - hero.x, s.y - hero.y) < INDICATOR_RADIUS;
+    // Coin pips (build / hire / upgrade) only render when the player
+    // has actually stopped near the building — keeps the screen clean
+    // during traversal. The pay-target ring + settling pulse + repair
+    // FX still render unconditionally because they're feedback for an
+    // action already in flight, not "you can spend here" hints.
+    const showPips = nearEnough && heroIsSettled;
 
     if (!s.active) {
       const isFresh = s.readyTimer > 0;
-      // Builds are paused at night — hide the cost pips and show a soft "paused"
-      // glyph above the ghost so the player knows why nothing is happening.
-      // Freshly-spawned ghosts (respawn or first-built) also hold off briefly
-      // before showing cost pips.
-      if (nearEnough && !isNight && !isFresh) {
+      if (showPips && !isNight && !isFresh) {
         const total = STATION_STATS[s.kind].cost;
         const yOffset = s.kind === 'wall' ? -22 : -40;
         drawCostSlots(ctx, s.x, s.y + yOffset, total - s.buildRemaining, total);
       }
-      if (nearEnough && isNight) {
+      if (showPips && isNight) {
         drawNightLock(ctx, s.x, s.y + (s.kind === 'wall' ? -22 : -36));
       }
       if (isFresh) drawSettlingPulse(ctx, s);
@@ -528,9 +1116,7 @@ export function drawStations(
     const committed = s.recruitIds.length + s.paidSlots;
     const hasOpenSlot = eff.capacity > 0 && committed < eff.capacity;
 
-    // Indicators are suppressed during the post-build/upgrade grace period so
-    // the player doesn't accidentally continue dripping coins in.
-    if (nearEnough && s.readyTimer <= 0) {
+    if (showPips && s.readyTimer <= 0) {
       if (hasOpenSlot) {
         const a = hireAnchorOffset(s.kind);
         if (a) {
@@ -643,13 +1229,18 @@ function drawRepairFx(ctx: CanvasRenderingContext2D, s: Station) {
 function drawUnpaidMark(ctx: CanvasRenderingContext2D, s: Station) {
   const alpha = Math.min(1, s.unpaidFx * 2);
   ctx.save();
-  const r = 7;
-  ctx.fillStyle = `rgba(255, 90, 90, ${0.85 * alpha})`;
-  ctx.beginPath();
-  ctx.arc(s.x, s.y - 34, r + 1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = `rgba(10, 11, 20, ${alpha})`;
-  ctx.font = `700 10px ${UI_FONTS.ui}`;
+  ctx.globalAlpha *= alpha;
+  // Hand-drawn dried-blood disc with a bone "!" inside.
+  handCircle(ctx, s.x, s.y - 34, 8, {
+    seed: 9770 + Math.round(s.x) * 13,
+    jitter: 0.5,
+    samples: 14,
+    stroke: '#7a0f0f',
+    strokeWidth: 1.1,
+    fill: CHARCOAL.accent,
+  });
+  ctx.fillStyle = CHARCOAL.ink2;
+  ctx.font = `700 11px ${CHARCOAL_FONTS.serif}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('!', s.x, s.y - 34 + 1);
@@ -663,15 +1254,15 @@ function drawSettlingPulse(ctx: CanvasRenderingContext2D, s: Station) {
   const pulse = (1 - t) * 1.4;
   const baseR = STATION_STATS[s.kind].placementRadius + 8;
   ctx.save();
-  // Outer expanding ring.
-  ctx.strokeStyle = `rgba(242, 201, 76, ${0.7 * alpha * (1 - pulse % 1)})`;
+  // Expanding ember ring — warm gold to match dawn/upgrade feel.
+  ctx.strokeStyle = `rgba(214, 138, 58, ${0.7 * alpha * (1 - pulse % 1)})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(s.x, s.y, baseR + (pulse % 1) * 14, 0, Math.PI * 2);
   ctx.stroke();
 
   // Label below.
-  ctx.fillStyle = `rgba(242, 201, 76, ${alpha})`;
+  ctx.fillStyle = `rgba(214, 138, 58, ${alpha})`;
   ctx.font = `600 9px ${UI_FONTS.ui}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -683,20 +1274,23 @@ function drawSettlingPulse(ctx: CanvasRenderingContext2D, s: Station) {
 
 function drawLevelPips(ctx: CanvasRenderingContext2D, s: Station) {
   const baseY = s.kind === 'wall' ? s.y - 16 : s.y - 30;
-  const r = 2.2;
+  const r = 2.4;
   const gap = 2;
   const step = r * 2 + gap;
   const totalW = s.level * step - gap;
   const startX = s.x - totalW / 2 + r;
   ctx.save();
   for (let i = 0; i < s.level; i++) {
-    ctx.fillStyle = '#ffd95a';
-    ctx.beginPath();
-    ctx.arc(startX + i * step, baseY, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#a88314';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
+    // Hand-drawn ember pip — small filled circle with a brief stroke jitter.
+    handCircle(ctx, startX + i * step, baseY, r, {
+      seed: 9750 + Math.round(s.x) * 17 + i,
+      jitter: 0.3,
+      samples: 10,
+      stroke: '#8a5a18',
+      strokeWidth: 0.8,
+      fill: CHARCOAL.ember,
+      opacity: 0.95,
+    });
   }
   ctx.restore();
 }
@@ -732,13 +1326,15 @@ function drawPendingSlotDots(
   const startX = cx - totalW / 2 + r;
   for (let i = 0; i < count; i++) {
     const x = startX + i * step;
-    ctx.fillStyle = 'rgba(242, 201, 76, 0.85)';
-    ctx.beginPath();
-    ctx.arc(x, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#a88314';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    // Bone disc — IOU mark for paid-but-unfilled hire slots.
+    handCircle(ctx, x, cy, r, {
+      seed: 9760 + Math.round(cx) * 11 + i,
+      jitter: 0.3,
+      samples: 10,
+      stroke: 'rgba(232,226,212,0.7)',
+      strokeWidth: 0.9,
+      fill: 'rgba(232,226,212,0.85)',
+    });
   }
   ctx.restore();
 }
@@ -783,6 +1379,8 @@ export function drawFocusPanel(
   w: number,
   h: number,
   clock: Clock,
+  relicsFound: RelicsFoundFlags,
+  forge: ForgeState,
 ) {
   let nearestStation: Station | undefined;
   let nearestNode: ResourceNode | undefined;
@@ -802,7 +1400,10 @@ export function drawFocusPanel(
   };
 
   for (const s of stations) {
-    // intentionally don't filter by prereq here — we want the tooltip.
+    // Skip stations whose campfire-tier gate hasn't been met yet —
+    // those ghosts aren't visible on the map and their focus panel
+    // would be a phantom popping up over empty grass.
+    if (!isStationFootprintVisible(s.kind, campfire.level)) continue;
     const d = Math.hypot(s.x - hero.x, s.y - hero.y);
     if (d < nearestD) {
       nearestD = d;
@@ -855,7 +1456,11 @@ export function drawFocusPanel(
   const isNight = clock.phase === 'night';
 
   if (nearestStation) {
-    renderStationPanel(ctx, nearestStation, coin, w, h, hero, campfire.level, isNight);
+    if (nearestStation.kind === 'blacksmith' && nearestStation.active) {
+      renderForgePanel(ctx, forge, w, h);
+    } else {
+      renderStationPanel(ctx, nearestStation, coin, w, h, hero, campfire.level, isNight, stations, relicsFound);
+    }
   } else if (nearestNode) {
     renderNodePanel(ctx, nearestNode, w, h);
   } else if (nearestWanderer) {
@@ -865,7 +1470,7 @@ export function drawFocusPanel(
   } else if (nearestPortal) {
     renderPortalPanel(ctx, nearestPortal, w, h);
   } else if (nearestCampfire) {
-    renderCampfirePanel(ctx, nearestCampfire, coin, w, h, stations, isNight);
+    renderCampfirePanel(ctx, nearestCampfire, coin, w, h, stations, isNight, relicsFound);
   }
 }
 
@@ -878,11 +1483,16 @@ function renderStationPanel(
   hero: Hero,
   campfireLevel: number,
   isNight: boolean,
+  stations: Station[],
+  relicsFound: RelicsFoundFlags,
 ) {
   const stats = STATION_STATS[station.kind];
   const eff = effectiveStats(station);
-  let title = station.active ? stats.name : `${stats.name} (building)`;
-  if (station.active) title += ` \u00B7 L${station.level}`;
+  // Bare station name — the "(building)" suffix was dropped (the action
+  // line already says "Hold Space to build" so the inactive state is
+  // already clear). Level moves to its own row via drawInfoPanel.
+  const title = stats.name;
+  const level = station.active ? `L${station.level}` : null;
 
   let statusLine: string;
   let statusColor = '#cfcfcf';
@@ -908,7 +1518,12 @@ function renderStationPanel(
 
   if (!station.active) {
     const needed = station.buildRemaining;
-    if (isNight) {
+    const prereqOk = prereqMet(station.kind, stations, campfireLevel, relicsFound);
+    if (!prereqOk) {
+      const reason = missingRelicHint(station.kind, relicsFound, campfireLevel, stations);
+      actionLine = reason ?? 'Locked — prereq missing';
+      actionColor = reason ? '#d6c25a' : '#aac6ff';
+    } else if (isNight) {
       actionLine = 'Construction paused — wait for dawn';
       actionColor = '#b48cff';
     } else {
@@ -971,7 +1586,142 @@ function renderStationPanel(
     }
   }
 
-  drawInfoPanel(ctx, w, h, title, statusLine, statusColor, actionLine, actionColor);
+  drawInfoPanel(ctx, w, h, title, statusLine, statusColor, actionLine, actionColor, level);
+}
+
+/** Bottom-left focus panel for the active blacksmith. Lists all three
+ *  forge tracks: current tier name (or "—" if untouched), next tier
+ *  cost + blurb. The currently-selected track is highlighted in ember;
+ *  hotkeys are rendered as tiny keycap-shaped boxes. */
+function renderForgePanel(
+  ctx: CanvasRenderingContext2D,
+  forge: ForgeState,
+  _canvasW: number,
+  canvasH: number,
+) {
+  const panelW = 360;
+  const panelH = 142;
+  const panelX = 14;
+  // Bottom-aligned with the action bar (which sits 22 px above the
+  // canvas bottom edge — see ACTION_BAR_BOTTOM_MARGIN in HUD.ts).
+  const panelY = canvasH - panelH - 22;
+
+  ctx.save();
+
+  // Charcoal page + border + spine drip — same chrome as other focus panels.
+  ctx.fillStyle = CHARCOAL.bg;
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+  handRect(ctx, panelX, panelY, panelW, panelH, {
+    seed: 7900,
+    jitter: 1.0,
+    samplesPerSide: 18,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 1,
+    opacity: 0.7,
+  });
+  handLine(ctx, panelX + 3, panelY + 6, panelX + 3, panelY + panelH - 6, {
+    seed: 7901,
+    jitter: 0.7,
+    samples: 14,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 1.4,
+    opacity: 0.55,
+  });
+
+  const padX = 18;
+
+  handText(ctx, 'THE FORGE', panelX + padX, panelY + 22, {
+    seed: 7910,
+    jitter: 0.2,
+    fontSize: 10,
+    font: CHARCOAL_FONTS.mono,
+    fill: CHARCOAL.bloodInk,
+    weight: 700,
+    letterSpacing: 3,
+  });
+  handText(ctx, 'What the relics taught', panelX + padX, panelY + 46, {
+    seed: 7911,
+    jitter: 0.4,
+    fontSize: 19,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    weight: 700,
+    italic: true,
+  });
+
+  // Three track rows. Status only — tier earned via POI claims, no
+  // payment surface here.
+  const tracks: ForgeTrack[] = ['archer', 'soldier', 'knight'];
+  const rowY0 = panelY + 66;
+  const rowH = 22;
+  for (let i = 0; i < tracks.length; i++) {
+    const track = tracks[i];
+    const spec = FORGE_TRACKS[track];
+    const tier = tierOf(forge, track);
+    const earned = tier > 0;
+    const y = rowY0 + i * rowH;
+
+    // Track label.
+    const labelX = panelX + padX;
+    handText(ctx, spec.label.toUpperCase(), labelX, y + 1, {
+      seed: 7930 + i,
+      jitter: 0.2,
+      fontSize: 10,
+      font: CHARCOAL_FONTS.mono,
+      fill: earned ? CHARCOAL.ember : CHARCOAL.ink,
+      weight: 700,
+      letterSpacing: 2,
+    });
+
+    // Three chevrons showing tier completion.
+    const chevX0 = labelX + 88;
+    for (let t = 0; t < 3; t++) {
+      const cx = chevX0 + t * 11;
+      drawForgeChevron(
+        ctx,
+        cx,
+        y - 3,
+        tier > t,
+        earned,
+        CHARCOAL.ember,
+        7940 + i * 3 + t,
+      );
+    }
+
+    // Most recent earned tier blurb (or "Untouched" when zero).
+    const next2X = chevX0 + 36;
+    if (tier === 0) {
+      handText(ctx, 'Untouched. Find a relic.', next2X, y + 1, {
+        seed: 7960 + i,
+        jitter: 0.2,
+        fontSize: 10,
+        font: UI_FONTS.ui,
+        fill: CHARCOAL.inkDim,
+        italic: true,
+      });
+    } else if (tier >= 3) {
+      handText(ctx, 'Fully forged.', next2X, y + 1, {
+        seed: 7970 + i,
+        jitter: 0.2,
+        fontSize: 10,
+        font: UI_FONTS.ui,
+        fill: CHARCOAL.inkDim,
+        italic: true,
+      });
+    } else {
+      const tierSpec = spec.tiers[tier - 1];
+      handText(ctx, tierSpec.name, next2X, y + 1, {
+        seed: 7960 + i,
+        jitter: 0.2,
+        fontSize: 10,
+        font: UI_FONTS.ui,
+        fill: CHARCOAL.ink,
+        italic: true,
+      });
+    }
+  }
+
+  ctx.restore();
 }
 
 function renderCampfirePanel(
@@ -982,29 +1732,40 @@ function renderCampfirePanel(
   h: number,
   stations: Station[],
   isNight: boolean,
+  relicsFound: { l2: boolean; l3: boolean },
 ) {
-  const title = `Campfire \u00B7 L${fire.level}`;
+  const title = `Campfire`;
+  const level = `L${fire.level}`;
   const upCostBase = fire.nextUpgradeCost();
   let statusLine: string;
   let statusColor = '#cfcfcf';
-  if (upCostBase !== null && fire.upgradeBlockReason(stations) === null) {
+  // Aura DPS — the campfire passively burns enemies inside its aura
+  // ring. Damage is per-tick (auraDamage every CAMPFIRE_AURA_INTERVAL
+  // seconds); we display it as damage-per-second so the player can read
+  // the aura at the same scale as their own DPS.
+  const auraDpsCurrent = fire.auraDamage / CAMPFIRE_AURA_INTERVAL;
+  const fmtDps = (v: number) =>
+    Number.isInteger(v * 10) ? v.toFixed(1) : v.toFixed(2);
+
+  if (upCostBase !== null && fire.upgradeBlockReason(stations, relicsFound) === null) {
+    // Upgrade preview — HP delta + aura damage delta. The light-radius
+    // gain reads visibly on the map so we don't call it out numerically.
     const nextIdx = fire.level; // 0-based into CAMPFIRE_LEVELS for next level
-    const parts: string[] = [];
     const cur = fire.maxHp;
-    const nxt = [100, 160, 240][nextIdx];
+    const nxt = CAMPFIRE_LEVELS[nextIdx]?.maxHp;
+    const auraDpsNext = (CAMPFIRE_LEVELS[nextIdx]?.auraDamage ?? 0) / CAMPFIRE_AURA_INTERVAL;
+    const parts: string[] = [];
     if (nxt && cur) parts.push(`+${nxt - cur} HP`);
-    const curLight = [150, 185, 220][fire.level - 1];
-    const nxtLight = [150, 185, 220][nextIdx];
-    if (nxtLight && curLight) parts.push(`+${nxtLight - curLight}px light`);
-    statusLine = parts.join(' \u00B7 ');
+    if (auraDpsNext > 0) parts.push(`+${fmtDps(auraDpsNext - auraDpsCurrent)} dmg/s aura`);
+    statusLine = parts.join(' · ');
     statusColor = '#aac6ff';
   } else {
-    statusLine = `HP ${Math.ceil(fire.hp)}/${fire.maxHp} \u00B7 light ${Math.round(fire.lightRadius)}`;
+    statusLine = `HP ${Math.ceil(fire.hp)}/${fire.maxHp} · ${fmtDps(auraDpsCurrent)} dmg/s aura`;
   }
   let actionLine: string | null = null;
   let actionColor = '#cfcfcf';
   const upCost = fire.nextUpgradeCost();
-  const block = fire.upgradeBlockReason(stations);
+  const block = fire.upgradeBlockReason(stations, relicsFound);
   if (upCost === null) {
     actionLine = 'Fully upgraded';
     actionColor = '#aac6ff';
@@ -1022,7 +1783,7 @@ function renderCampfirePanel(
     actionLine = `Hold Space to upgrade to L${fire.level + 1} \u00B7 ${upRemaining}c`;
     actionColor = coin >= upRemaining ? '#ffd95a' : '#ff7878';
   }
-  drawInfoPanel(ctx, w, h, title, statusLine, statusColor, actionLine, actionColor);
+  drawInfoPanel(ctx, w, h, title, statusLine, statusColor, actionLine, actionColor, level);
 }
 
 function renderNodePanel(
@@ -1050,14 +1811,24 @@ function renderWandererPanel(
   drawInfoPanel(ctx, w, h, title, statusLine, '#cfcfcf', actionLine, actionColor);
 }
 
-function poiBlurb(kind: POI['kind']): string {
-  switch (kind) {
-    case 'camp': return '3 villagers will join you';
-    case 'chest': return 'Loose coins \u2014 15c';
-    case 'shrine': return 'Grants one free upgrade';
-    case 'graveyard': return 'Wakes 3 runners \u2014 leaves 20c behind';
-    case 'cache': return 'Heavy chest \u2014 30c';
-    case 'ruin': return 'Raises a free gather post with a worker';
+/** Short atmospheric blurb for the focus panel — a few words that
+ *  describe the POI without disclosing what claiming it gives the
+ *  player. The full payoff arrives on the claim's lore card; until
+ *  then the player is moving toward something they only half-know. */
+function poiBlurb(poi: POI): string {
+  const inst = poiInstance(poi.instanceId);
+  if (!inst) return '';
+  switch (inst.category) {
+    case 'relic':
+      return 'Older than ash';
+    case 'settlement':
+      return 'Smoke once rose here';
+    case 'lore':
+      return 'Something somebody dropped';
+    case 'upgrade':
+      return 'A lesson the iron remembers';
+    case 'night':
+      return 'A bargain offered in the dark';
   }
 }
 
@@ -1067,9 +1838,10 @@ function renderPOIPanel(
   w: number,
   h: number,
 ) {
-  const title = POI_LABELS[poi.kind];
-  const statusLine = poiBlurb(poi.kind);
-  const actionLine = POI_HINTS[poi.kind];
+  const inst = poiInstance(poi.instanceId);
+  const title = inst?.label ?? '';
+  const statusLine = poiBlurb(poi);
+  const actionLine = inst?.hint ?? '';
   drawInfoPanel(ctx, w, h, title, statusLine, '#cfcfcf', actionLine, '#ffd95a');
 }
 
@@ -1087,27 +1859,72 @@ function renderPortalPanel(
 
 function roleShortName(kind: StationKind): string {
   switch (kind) {
-    case 'gather': return 'Gatherers';
+    case 'gather': return 'Foresters';
     case 'tower': return 'Archers';
     case 'workshop': return 'Builders';
     case 'barracks': return 'Knights';
-    case 'garrison': return 'Guards';
+    case 'garrison': return 'Soldiers';
     case 'wall': return 'Wall';
     case 'farm': return 'Farm';
     case 'blacksmith': return 'Blacksmith';
   }
 }
 
+/** Returns the most informative reason a build is blocked, or null if
+ *  the prereq is fully satisfied. Hint priority: relic missing →
+ *  campfire-level too low → station-chain prereq missing → null
+ *  (means it's actually buildable). The relic gate goes first because
+ *  it's the explorable gate the player has the most agency over. */
+function missingRelicHint(
+  kind: StationKind,
+  relicsFound: RelicsFoundFlags,
+  campfireLevel: number,
+  stations: Station[],
+): string | null {
+  // Relic gate (when applicable).
+  if (kind === 'workshop' && !relicsFound.workshop)
+    return "Find the mason's blueprint in the wilds";
+  if (kind === 'blacksmith' && !relicsFound.blacksmith)
+    return 'Find the anvil that remembers in the wilds';
+  // Internal kind 'barracks' is the patrol building (display "Stables").
+  if (kind === 'barracks' && !relicsFound.stables)
+    return 'Find the bridle of the last horse in the wilds';
+
+  // Campfire-level gate.
+  const reqLevel =
+    kind === 'workshop' || kind === 'blacksmith' || kind === 'barracks' ? 2 : 1;
+  if (campfireLevel < reqLevel) {
+    return `Feed the fire to Campfire L${reqLevel} first`;
+  }
+
+  // Station-chain gate (e.g. workshop needs an active tower).
+  // Watchtower + forester's hut both have no chain prereq — they're
+  // open from the start, so neither appears here.
+  const chainMap: Partial<Record<StationKind, { req: StationKind; label: string }>> = {
+    workshop:   { req: 'tower',    label: 'Watchtower' },
+    farm:       { req: 'tower',    label: 'Watchtower' },
+    garrison:   { req: 'tower',    label: 'Watchtower' },
+    blacksmith: { req: 'tower',    label: 'Watchtower' },
+    barracks:   { req: 'garrison', label: 'Barracks' },
+  };
+  const chain = chainMap[kind];
+  if (chain && !stations.some((s) => s.kind === chain.req && s.active)) {
+    return `Build a ${chain.label} first`;
+  }
+
+  return null;
+}
+
 function roleBlurb(kind: StationKind): string {
   switch (kind) {
-    case 'gather': return 'Gatherers chop nearby trees and bushes';
+    case 'gather': return 'Foresters plant trees and bushes you can chop';
     case 'tower': return 'Archers defend at night — holds 3 villagers';
     case 'workshop': return 'Builders repair damaged walls';
-    case 'barracks': return 'Knights roam and attack enemies at night';
-    case 'garrison': return 'Guards take up wall posts and melee attackers';
+    case 'barracks': return 'Knights patrol and chase enemies at night';
+    case 'garrison': return 'Soldiers take up wall posts and melee attackers';
     case 'wall': return 'Blocks enemies — destructible';
     case 'farm': return 'Passive coin income — no villager needed';
-    case 'blacksmith': return 'Unlocks the dawn shop and night abilities';
+    case 'blacksmith': return 'Houses the whetstone — sharpens the hero blade';
   }
 }
 
@@ -1120,52 +1937,103 @@ function drawInfoPanel(
   _statusColor: string,
   actionLine: string | null,
   actionColor: string,
+  level: string | null = null,
 ) {
+  // The FOCUS eyebrow was dropped — the panel only appears when the
+  // hero is near something, so the chrome itself signals "this is your
+  // focus." `level` (when supplied) renders right-aligned on the same
+  // row as the title — no extra height needed.
   const panelW = 304;
-  const panelH = actionLine ? 92 : 64;
-  const panelX = 12;
-  const panelY = canvasH - panelH - 60;
+  const panelH = actionLine ? 78 : 50;
+  const panelX = 14;
+  // Bottom-aligned with the action bar (which sits 22 px above the
+  // canvas bottom edge — see ACTION_BAR_BOTTOM_MARGIN in HUD.ts).
+  const panelY = canvasH - panelH - 22;
 
   ctx.save();
 
-  ctx.fillStyle = UI_COLORS.surface;
+  // Charcoal page body.
+  ctx.fillStyle = CHARCOAL.bg;
   ctx.fillRect(panelX, panelY, panelW, panelH);
 
-  // Left accent stripe matches the cream "focus" tone.
-  ctx.fillStyle = UI_COLORS.cream;
-  ctx.fillRect(panelX, panelY, 3, panelH);
+  // Hand-drawn charcoal border.
+  handRect(ctx, panelX, panelY, panelW, panelH, {
+    seed: 7700,
+    jitter: 1.0,
+    samplesPerSide: 16,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 1,
+    opacity: 0.7,
+  });
 
-  const padX = 14;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  // Dried-blood spine drip — same signature as HUD/menus.
+  handLine(ctx, panelX + 3, panelY + 6, panelX + 3, panelY + panelH - 6, {
+    seed: 7701,
+    jitter: 0.7,
+    samples: 12,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 1.4,
+    opacity: 0.55,
+  });
 
-  // Smallcaps "Focus" header.
-  ctx.fillStyle = UI_COLORS.inkDim;
-  ctx.font = `600 8.5px ${UI_FONTS.ui}`;
-  drawSmallCaps(ctx, 'Focus', panelX + padX, panelY + 16, 1.4);
+  const padX = 18;
 
-  // Serif italic title.
-  ctx.fillStyle = UI_COLORS.cream;
-  ctx.font = `italic 700 20px ${UI_FONTS.serif}`;
-  ctx.fillText(title, panelX + padX, panelY + 38);
+  // Italic-serif title in bone.
+  handText(ctx, title, panelX + padX, panelY + 26, {
+    seed: 7711,
+    jitter: 0.4,
+    fontSize: 19,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    weight: 700,
+    italic: true,
+  });
 
-  // Italic dim sub-line.
-  ctx.fillStyle = UI_COLORS.inkDim;
-  ctx.font = `italic 500 10.5px ${UI_FONTS.ui}`;
-  ctx.fillText(statusLine, panelX + padX, panelY + 54);
+  // Optional level — small mono accent, right-aligned on the same row
+  // as the italic-serif title. Used for stations + campfire (e.g. "L1").
+  if (level) {
+    handText(ctx, level, panelX + panelW - padX, panelY + 26, {
+      seed: 7713,
+      jitter: 0.25,
+      fontSize: 10,
+      font: CHARCOAL_FONTS.mono,
+      fill: CHARCOAL.bloodInk,
+      weight: 700,
+      letterSpacing: 2.5,
+      align: 'right',
+    });
+  }
+
+  // Status line in dim bone.
+  handText(ctx, statusLine, panelX + padX, panelY + 44, {
+    seed: 7712,
+    jitter: 0.3,
+    fontSize: 11,
+    font: UI_FONTS.ui,
+    fill: CHARCOAL.inkDim,
+    italic: true,
+  });
 
   if (actionLine) {
-    // Dashed divider.
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    ctx.moveTo(panelX + padX, panelY + 66);
-    ctx.lineTo(panelX + panelW - padX, panelY + 66);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Hand-drawn dashed divider.
+    handLine(
+      ctx,
+      panelX + padX,
+      panelY + 56,
+      panelX + panelW - padX,
+      panelY + 56,
+      {
+        seed: 7720,
+        jitter: 0.4,
+        samples: 18,
+        stroke: 'rgba(232,226,212,0.18)',
+        strokeWidth: 0.6,
+        dash: [2, 3],
+        charcoal: false,
+      },
+    );
 
-    drawActionLine(ctx, panelX + padX, panelY + 77, panelW - padX * 2, actionLine, actionColor);
+    drawActionLine(ctx, panelX + padX, panelY + 66, panelW - padX * 2, actionLine, actionColor);
   }
 
   ctx.restore();
@@ -1268,29 +2136,35 @@ function drawCostSlots(
       const idx = row * SLOTS_PER_ROW + i;
       const x = startX + i * step;
       const isFilled = idx < filled;
+      const seed = 9700 + Math.round(cx) * 31 + idx * 7;
       if (isFilled) {
-        ctx.shadowColor = 'rgba(242, 201, 76, 0.9)';
+        // Blood-red disc with bone outline + glow.
+        ctx.shadowColor = 'rgba(178, 30, 30, 0.9)';
         ctx.shadowBlur = 4;
-        ctx.fillStyle = '#f2c94c';
-        ctx.beginPath();
-        ctx.arc(x, y, SLOT_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
+        handCircle(ctx, x, y, SLOT_RADIUS, {
+          seed,
+          jitter: 0.4,
+          samples: 12,
+          stroke: CHARCOAL.ink2,
+          strokeWidth: 1,
+          fill: CHARCOAL.accent,
+          opacity: 1,
+        });
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = '#a88314';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.fillStyle = '#fff6c4';
-        ctx.beginPath();
-        ctx.arc(x - 1.2, y - 1.2, 1.3, 0, Math.PI * 2);
-        ctx.fill();
       } else {
-        ctx.fillStyle = 'rgba(10, 11, 20, 0.6)';
+        // Hollow bone ring with a faint pinpoint dot.
+        handCircle(ctx, x, y, SLOT_RADIUS, {
+          seed,
+          jitter: 0.5,
+          samples: 12,
+          stroke: 'rgba(232,226,212,0.7)',
+          strokeWidth: 1.2,
+          opacity: 0.9,
+        });
+        ctx.fillStyle = 'rgba(232,226,212,0.32)';
         ctx.beginPath();
-        ctx.arc(x, y, SLOT_RADIUS, 0, Math.PI * 2);
+        ctx.arc(x, y, 1.2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#f2c94c';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
       }
     }
   }
@@ -1538,50 +2412,151 @@ export function drawPortals(ctx: CanvasRenderingContext2D, portals: Portal[]) {
 
 function drawPortal(ctx: CanvasRenderingContext2D, p: Portal) {
   const r = PORTAL_RADIUS;
-  // Smoky ground halo
-  const halo = ctx.createRadialGradient(p.x, p.y, 4, p.x, p.y, r * 1.8);
-  halo.addColorStop(0, 'rgba(120, 40, 140, 0.5)');
-  halo.addColorStop(1, 'rgba(120, 40, 140, 0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+  if (p.kind === 'wild') {
+    // Wild portals — muted bone/charcoal swirl with a faint blood core.
+    // Reads as "old, lichen-covered, a permanent fixture of the wilds."
+    const halo = ctx.createRadialGradient(p.x, p.y, 4, p.x, p.y, r * 1.8);
+    halo.addColorStop(0, 'rgba(80, 60, 70, 0.45)');
+    halo.addColorStop(1, 'rgba(40, 30, 35, 0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
 
-  // Outer vortex ring
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.rotate(p.swirl);
-  ctx.fillStyle = p.hitFlash > 0 ? '#fff' : '#2b0a2e';
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#6a1a70';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // Swirl arms
-  ctx.strokeStyle = 'rgba(200, 100, 220, 0.85)';
-  ctx.lineWidth = 1.8;
-  for (let i = 0; i < 3; i++) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.swirl * 0.6);
+    // Disc fill — dark vellum with a faint blood core.
+    ctx.fillStyle = p.hitFlash > 0 ? '#fff' : '#1a0a0a';
     ctx.beginPath();
-    const a0 = (i / 3) * Math.PI * 2;
-    ctx.arc(0, 0, r * 0.55, a0, a0 + Math.PI * 0.65);
-    ctx.stroke();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // Hand-drawn charcoal ring + faint dried-blood inner arc.
+    handCircle(ctx, p.x, p.y, r, {
+      seed: 6100 + p.id * 31,
+      jitter: 1.4,
+      samples: 28,
+      stroke: 'rgba(232,226,212,0.55)',
+      strokeWidth: 1.2,
+      passes: 2,
+      opacity: 0.85,
+    });
+    handCircle(ctx, p.x, p.y, r * 0.62, {
+      seed: 6101 + p.id * 31,
+      jitter: 1,
+      samples: 22,
+      stroke: 'rgba(178,30,30,0.55)',
+      strokeWidth: 1,
+      passes: 1,
+      opacity: 0.7,
+    });
+    // Tiny lichen specks scattered around the rim.
+    inkSplatter(ctx, p.x, p.y, {
+      seed: 6110 + p.id * 7,
+      count: 10,
+      spread: r * 1.1,
+      color: 'rgba(232,226,212,0.45)',
+      opacity: 0.45,
+      sizeMin: 0.4,
+      sizeMax: 1.4,
+    });
+  } else {
+    // Siege portals — dramatic dried-blood swirl with bright ember sparks.
+    // Reads as "the dark is delivering tonight."
+    const halo = ctx.createRadialGradient(p.x, p.y, 4, p.x, p.y, r * 2.4);
+    halo.addColorStop(0, 'rgba(178, 30, 30, 0.55)');
+    halo.addColorStop(0.6, 'rgba(122, 15, 15, 0.18)');
+    halo.addColorStop(1, 'rgba(122, 15, 15, 0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(p.x - r * 2.4, p.y - r * 2.4, r * 4.8, r * 4.8);
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.swirl);
+    ctx.fillStyle = p.hitFlash > 0 ? '#fff' : '#2a060a';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    // Hand-drawn swirl arms.
+    ctx.strokeStyle = 'rgba(214, 138, 58, 0.85)';
+    ctx.lineWidth = 1.8;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      const a0 = (i / 3) * Math.PI * 2;
+      ctx.arc(0, 0, r * 0.55, a0, a0 + Math.PI * 0.65);
+      ctx.stroke();
+    }
+    // Bright central spark.
+    ctx.fillStyle = '#ffd28a';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    handCircle(ctx, p.x, p.y, r, {
+      seed: 6200 + p.id * 31,
+      jitter: 1.4,
+      samples: 28,
+      stroke: '#b21e1e',
+      strokeWidth: 1.4,
+      passes: 2,
+      opacity: 0.95,
+    });
+    inkSplatter(ctx, p.x, p.y, {
+      seed: 6210 + p.id * 11,
+      count: 14,
+      spread: r * 1.5,
+      color: '#7a0f0f',
+      opacity: 0.5,
+      sizeMin: 0.6,
+      sizeMax: 2.4,
+    });
   }
-  // Central eye
-  ctx.fillStyle = '#ffb0f0';
-  ctx.beginPath();
-  ctx.arc(0, 0, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 
   // HP bar when damaged
   if (p.hp < p.maxHp) {
-    const bw = 30;
+    const bw = 32;
     const bh = 4;
     const bx = p.x - bw / 2;
-    const by = p.y - r - 10;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    const by = p.y - r - 12;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
-    ctx.fillStyle = '#d147ff';
+    ctx.fillStyle = p.kind === 'wild' ? '#e8e2d4' : '#d68a3a';
     ctx.fillRect(bx, by, bw * (p.hp / p.maxHp), bh);
+  }
+}
+
+/** Pulsing red glyph on the ground at a map edge — telegraphs where a
+ *  siege portal will open at night-start. Pulses at ~1.4 Hz. */
+export function drawWarlights(ctx: CanvasRenderingContext2D, warlights: Array<{ x: number; y: number; age: number; id: number }>) {
+  for (const w of warlights) {
+    const pulse = 0.5 + 0.5 * Math.sin(w.age * 9);
+    ctx.save();
+    // Soft red ground halo.
+    const halo = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, 28);
+    halo.addColorStop(0, `rgba(178, 30, 30, ${0.35 + pulse * 0.25})`);
+    halo.addColorStop(1, 'rgba(178, 30, 30, 0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(w.x - 28, w.y - 28, 56, 56);
+    // Hand-drawn dashed red ring at the warlight position.
+    handCircle(ctx, w.x, w.y, 14, {
+      seed: 6300 + w.id * 11,
+      jitter: 1.0,
+      samples: 22,
+      stroke: '#b21e1e',
+      strokeWidth: 1.3,
+      opacity: 0.55 + pulse * 0.4,
+    });
+    // Red splatter at the centre — ember of what's about to open.
+    inkSplatter(ctx, w.x, w.y, {
+      seed: 6310 + w.id * 7,
+      count: 8,
+      spread: 8,
+      color: '#7a0f0f',
+      opacity: 0.65,
+      sizeMin: 0.6,
+      sizeMax: 2.0,
+    });
+    ctx.restore();
   }
 }
 
@@ -1593,8 +2568,53 @@ export function drawPOIs(ctx: CanvasRenderingContext2D, pois: POI[]) {
   }
 }
 
+/** Renders a sickly yellow + dried-blood halo over every undiscovered
+ *  night POI. Drawn in screen space AFTER the lighting overlay so the
+ *  beacon punches through the night darkness — these POIs are
+ *  meant to be visible from far away as bargains the dark is
+ *  offering you. Symmetric counterpart to `drawRelicHints` for the
+ *  day-side discovery system. */
+export function drawNightPoiBeacons(
+  ctx: CanvasRenderingContext2D,
+  pois: POI[],
+  cameraX: number,
+  cameraY: number,
+  viewW: number,
+  viewH: number,
+) {
+  ctx.save();
+  for (const p of pois) {
+    if (p.claimed) continue;
+    const inst = poiInstance(p.instanceId);
+    if (!inst || inst.category !== 'night') continue;
+    const sx = p.x - cameraX;
+    const sy = p.y - cameraY;
+    if (sx < -80 || sx > viewW + 80 || sy < -80 || sy > viewH + 80) continue;
+    const pulse = 0.7 + Math.sin(performance.now() / 380) * 0.3;
+    // Outer sickly-yellow + dried-blood halo.
+    const grad = ctx.createRadialGradient(sx, sy, 4, sx, sy, 46);
+    grad.addColorStop(0, `rgba(214, 194, 80, ${0.55 * pulse})`);
+    grad.addColorStop(0.55, `rgba(178, 30, 30, ${0.32 * pulse})`);
+    grad.addColorStop(1, 'rgba(178, 30, 30, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 46, 0, Math.PI * 2);
+    ctx.fill();
+    // Tighter inner ring — the sigil under the bargain. Dashed,
+    // sickly yellow so it reads as ritual not safety.
+    ctx.strokeStyle = `rgba(232, 210, 90, ${0.7 * pulse})`;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 24, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
 function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
-  if (p.kind === 'camp') {
+  if (p.sprite === 'camp') {
     ctx.fillStyle = '#8c6a3b';
     ctx.beginPath();
     ctx.moveTo(p.x - 14, p.y + 2);
@@ -1615,7 +2635,7 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
     ctx.stroke();
     ctx.fillStyle = '#3a2010';
     ctx.fillRect(p.x - 2, p.y + 2, 4, 2);
-  } else if (p.kind === 'chest') {
+  } else if (p.sprite === 'chest') {
     ctx.fillStyle = '#6b4a2b';
     ctx.fillRect(p.x - 10, p.y - 7, 20, 14);
     ctx.strokeStyle = '#2a1a0a';
@@ -1625,7 +2645,7 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
     ctx.fillRect(p.x - 11, p.y - 9, 22, 4);
     ctx.strokeRect(p.x - 11, p.y - 9, 22, 4);
     ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
-  } else if (p.kind === 'cache') {
+  } else if (p.sprite === 'cache') {
     // Larger, gilded chest with a gem
     ctx.fillStyle = '#4c321a';
     ctx.fillRect(p.x - 14, p.y - 9, 28, 18);
@@ -1649,7 +2669,7 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
     ctx.strokeStyle = '#2a5a7a';
     ctx.lineWidth = 1;
     ctx.stroke();
-  } else if (p.kind === 'shrine') {
+  } else if (p.sprite === 'shrine') {
     ctx.fillStyle = '#888882';
     ctx.fillRect(p.x - 7, p.y - 14, 14, 16);
     ctx.strokeStyle = '#2f2f32';
@@ -1664,7 +2684,7 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
     ctx.fillText('\u2734', p.x, p.y - 6);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
-  } else if (p.kind === 'graveyard') {
+  } else if (p.sprite === 'graveyard') {
     // Three tombstones
     ctx.fillStyle = '#7a7a78';
     ctx.strokeStyle = '#2f2f32';
@@ -1687,7 +2707,7 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 6, 16, 4, 0, 0, Math.PI * 2);
     ctx.fill();
-  } else if (p.kind === 'ruin') {
+  } else if (p.sprite === 'ruin') {
     // Leaning wooden frame + rubble pile
     ctx.fillStyle = 'rgba(90, 75, 55, 0.8)';
     ctx.beginPath();
@@ -1721,7 +2741,8 @@ function drawPOI(ctx: CanvasRenderingContext2D, p: POI) {
   // Hover label
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-  const label = POI_LABELS[p.kind];
+  const inst = poiInstance(p.instanceId);
+  const label = inst?.label ?? '';
   ctx.font = 'bold 10px system-ui, sans-serif';
   const w = ctx.measureText(label).width + 10;
   ctx.fillRect(p.x - w / 2, p.y - 28, w, 14);
@@ -1784,130 +2805,596 @@ export function drawNightBanner(
   const outT = Math.max(0, Math.min(1, clamped / 0.25));
   const alpha = Math.min(inT, outT);
   ctx.save();
+  ctx.globalAlpha *= alpha;
 
-  // Red+purple inner vignette.
-  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.7);
-  vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  vg.addColorStop(0.55, `rgba(107, 90, 163, ${0.2 * alpha})`);
-  vg.addColorStop(1, `rgba(255, 90, 90, ${0.3 * alpha})`);
+  // Heavy black wash + dried-blood vignette.
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, w, h);
+  const vg = ctx.createRadialGradient(w / 2, h * 0.4, 40, w / 2, h * 0.4, Math.max(w, h) * 0.7);
+  vg.addColorStop(0, 'rgba(122, 15, 15, 0.18)');
+  vg.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
 
-  // Headline.
-  ctx.fillStyle = `rgba(234, 223, 196, ${alpha})`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.shadowColor = `rgba(0, 0, 0, ${0.9 * alpha})`;
-  ctx.shadowBlur = 20;
-  ctx.font = `italic 700 58px ${UI_FONTS.serif}`;
-  ctx.fillText(`Night ${night}`, w / 2, 44);
-  ctx.shadowBlur = 0;
+  // Dripping red drips down from the top edge.
+  const drips = [80, 220, 360, 500, 640, 780];
+  for (let i = 0; i < drips.length; i++) {
+    const px = drips[i] * (w / 880);
+    handLine(ctx, px, 100, px + (i % 2 === 0 ? 3 : -3), 118 + i * 4, {
+      seed: 8420 + i,
+      jitter: 0.6,
+      samples: 8,
+      stroke: CHARCOAL.accent,
+      strokeWidth: 1.5,
+      opacity: 0.7,
+    });
+  }
+  inkSplatter(ctx, w / 2, 118, {
+    seed: 8430,
+    count: 24,
+    spread: w * 0.4,
+    color: CHARCOAL.accent2,
+    opacity: 0.5,
+    sizeMin: 0.6,
+    sizeMax: 3,
+  });
 
-  // Tagline smallcaps.
-  ctx.fillStyle = `rgba(255, 90, 90, ${alpha})`;
-  ctx.font = `600 10px ${UI_FONTS.ui}`;
-  drawSmallCapsCentered(ctx, 'They arrive from the dark', w / 2, 112, 1.6);
+  // "— NIGHT NN —" preamble.
+  handText(ctx, `\u2014 NIGHT ${String(night).padStart(2, '0')} \u2014`, w / 2, 154, {
+    seed: 8440,
+    jitter: 0.4,
+    fontSize: 13,
+    font: CHARCOAL_FONTS.mono,
+    fill: CHARCOAL.bloodInk,
+    weight: 700,
+    letterSpacing: 6,
+    align: 'center',
+  });
+  // Decorative rule under preamble.
+  handLine(ctx, w / 2 - 90, 164, w / 2 + 90, 164, {
+    seed: 8441,
+    jitter: 1.2,
+    samples: 18,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 0.8,
+  });
 
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
+  // Big "NIGHT" headline.
+  handText(ctx, 'NIGHT', w / 2, 232, {
+    seed: 8450,
+    jitter: 1.4,
+    fontSize: 88,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    weight: 700,
+    italic: true,
+    letterSpacing: 8,
+    align: 'center',
+  });
+  handLine(ctx, w / 2 - 220, 254, w / 2 + 220, 254, {
+    seed: 8451,
+    jitter: 2.5,
+    samples: 36,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 1.6,
+  });
+  handLine(ctx, w / 2 - 200, 260, w / 2 + 200, 260, {
+    seed: 8452,
+    jitter: 2,
+    samples: 30,
+    stroke: CHARCOAL.accent2,
+    strokeWidth: 1,
+    opacity: 0.7,
+  });
+
+  handText(ctx, 'They arrive from the dark.', w / 2, 298, {
+    seed: 8460,
+    jitter: 0.5,
+    fontSize: 18,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    italic: true,
+    align: 'center',
+    opacity: 0.85,
+  });
+
   ctx.restore();
 }
 
+// ── Note card typewriter timings (tunable) ───────────────────────────
+// Each char's reveal animation overlaps with its neighbors — cadence
+// (when the next char's reveal STARTS) is shorter than the per-char
+// duration (how long each char animates), producing a flowing wave.
+const NOTE_TITLE_CHAR_CADENCE = 22 / 1000;
+const NOTE_BODY_CHAR_CADENCE = 28 / 1000;
+const NOTE_CTA_CHAR_CADENCE = 22 / 1000;
+const NOTE_CHAR_REVEAL_DURATION = 200 / 1000;
+/** Pause between sections (title→body, body→cta) — gives the eye a
+ *  beat between blocks of text instead of one continuous typewriter. */
+const NOTE_SECTION_PAUSE = 120 / 1000;
+/** Total animation duration for the card. After this, every char is
+ *  fully landed (shaking words still shake forever). Used by the
+ *  Game's two-press dismissal: first Space jumps to this duration,
+ *  second Space dismisses. */
+export function noteCardRevealDuration(note: NoteCard): number {
+  const titleLen = note.title.length;
+  const bodyLen = note.body.length;
+  const ctaLen = note.cta ? note.cta.length : 0;
+  let t = titleLen * NOTE_TITLE_CHAR_CADENCE + NOTE_CHAR_REVEAL_DURATION;
+  t += NOTE_SECTION_PAUSE;
+  t += bodyLen * NOTE_BODY_CHAR_CADENCE + NOTE_CHAR_REVEAL_DURATION;
+  if (note.cta) {
+    t += NOTE_SECTION_PAUSE;
+    t += ctaLen * NOTE_CTA_CHAR_CADENCE + NOTE_CHAR_REVEAL_DURATION;
+  }
+  return t;
+}
+
+/**
+ * Render the parchment card with a typewriter-style reveal: each char
+ * starts large + above its target + transparent, then settles into
+ * place with a 200ms scale+drop+fade curve. Important words (matched
+ * against `note.shake`) keep a tiny sinusoidal jitter forever after.
+ *
+ * `revealTime` is seconds since this card was promoted to active.
+ * Owner (Game) bumps it past `noteCardRevealDuration(note)` on the
+ * player's first dismissal-key press to instantly complete the reveal.
+ */
 export function drawNoteCard(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  title: string,
-  body: string,
+  note: NoteCard,
+  revealTime: number,
 ) {
-  // Backdrop — dims the world beneath the parchment.
+  const { title, body } = note;
+  const accent = note.accent ?? 'blood';
+  const cta = note.cta;
+  const accentStroke = accent === 'ember' ? CHARCOAL.ember : CHARCOAL.accent;
+  const accentInk = accent === 'ember' ? CHARCOAL.ember : CHARCOAL.bloodInk;
+
+  // Lowercased shake-word set, with punctuation stripped on lookup so
+  // "stay." and "stay," and "Stay" all match a `shake: ['stay']` entry.
+  const shakeSet = new Set((note.shake ?? []).map((s) => s.toLowerCase()));
+  const isImportantWord = (word: string) => {
+    if (shakeSet.size === 0) return false;
+    const stripped = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return shakeSet.has(stripped);
+  };
+
   ctx.save();
-  ctx.fillStyle = 'rgba(6, 7, 14, 0.75)';
+  // Heavy black wash dims the world beneath.
+  ctx.fillStyle = 'rgba(2, 0, 2, 0.78)';
   ctx.fillRect(0, 0, w, h);
 
-  const cardW = Math.min(540, w - 80);
-  const cardH = 260;
+  const cardW = Math.min(560, w - 80);
+  const ctaBlockH = cta ? 56 : 0;
+  const cardH = 280 + ctaBlockH;
   const cardX = (w - cardW) / 2;
   const cardY = (h - cardH) / 2;
 
-  // Parchment body — warm beige with a subtle vignette so it feels hand-aged.
-  const grad = ctx.createRadialGradient(
-    cardX + cardW / 2, cardY + cardH / 2, 20,
-    cardX + cardW / 2, cardY + cardH / 2, Math.max(cardW, cardH) * 0.65,
-  );
-  grad.addColorStop(0, '#f2e5c2');
-  grad.addColorStop(1, '#c9b386');
-  ctx.fillStyle = grad;
+  // Charcoal vellum.
+  ctx.fillStyle = CHARCOAL.bg;
   ctx.fillRect(cardX, cardY, cardW, cardH);
 
-  // Fraying edge — a thin dark border and a torn-top wax-seal ribbon.
-  ctx.strokeStyle = 'rgba(60, 40, 16, 0.5)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(cardX + 0.5, cardY + 0.5, cardW - 1, cardH - 1);
-  ctx.strokeStyle = 'rgba(60, 40, 16, 0.18)';
-  ctx.setLineDash([2, 4]);
-  ctx.strokeRect(cardX + 10, cardY + 10, cardW - 20, cardH - 20);
-  ctx.setLineDash([]);
+  // Outer charcoal frame.
+  handRect(ctx, cardX, cardY, cardW, cardH, {
+    seed: 9101,
+    jitter: 1.6,
+    samplesPerSide: 22,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 1.4,
+    opacity: 0.85,
+    passes: 2,
+  });
 
-  // Title ribbon.
-  ctx.fillStyle = 'rgba(90, 50, 20, 0.9)';
-  ctx.fillRect(cardX, cardY + 22, cardW, 22);
-  ctx.fillStyle = '#f2e5c2';
-  ctx.font = `600 11px ${UI_FONTS.ui}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  drawSmallCapsCentered(ctx, title, cardX + cardW / 2, cardY + 33, 1.4);
+  // Faint hatch wash.
+  crossHatch(ctx, cardX + 6, cardY + 6, cardW - 12, cardH - 12, {
+    seed: 9102,
+    spacing: 18,
+    angle: 22,
+    jitter: 0.8,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 0.3,
+    opacity: 0.05,
+    double: true,
+  });
 
-  // Body — handwritten-feeling italic serif.
-  ctx.fillStyle = '#2a1810';
-  ctx.font = `italic 500 17px ${UI_FONTS.serif}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
+  // Corner ritual marks.
+  const cornerOffsets: Array<[number, number, number, number]> = [
+    [cardX, cardY, 16, 16],
+    [cardX + cardW, cardY, -16, 16],
+    [cardX, cardY + cardH, 16, -16],
+    [cardX + cardW, cardY + cardH, -16, -16],
+  ];
+  for (let i = 0; i < cornerOffsets.length; i++) {
+    const [cx, cy, dx, dy] = cornerOffsets[i];
+    handLine(ctx, cx, cy, cx + dx, cy, {
+      seed: 9110 + i * 2,
+      jitter: 0.4,
+      samples: 4,
+      stroke: accentStroke,
+      strokeWidth: 1,
+      opacity: 0.6,
+    });
+    handLine(ctx, cx, cy, cx, cy + dy, {
+      seed: 9111 + i * 2,
+      jitter: 0.4,
+      samples: 4,
+      stroke: accentStroke,
+      strokeWidth: 1,
+      opacity: 0.6,
+    });
+  }
+
+  // ── Title — animated mono small caps in accent ink ──────────────
+  const titleStr = title.toUpperCase();
+  const titleFontSize = 12;
+  const titleFontStr = `700 ${titleFontSize}px ${CHARCOAL_FONTS.mono}`;
+  const titleLetterSpacing = 4;
+  const titleY = cardY + 36;
+  drawAnimatedTextLineCentered(ctx, {
+    text: titleStr,
+    centerX: cardX + cardW / 2,
+    y: titleY,
+    fontSize: titleFontSize,
+    fontStr: titleFontStr,
+    letterSpacing: titleLetterSpacing,
+    color: accentInk,
+    revealStart: 0,
+    cadence: NOTE_TITLE_CHAR_CADENCE,
+    revealTime,
+    isImportantWord,
+  });
+  // Title divider — fades in once the title has finished.
+  const titleEndT = titleStr.length * NOTE_TITLE_CHAR_CADENCE + NOTE_CHAR_REVEAL_DURATION;
+  const titleDivAlpha = clamp01((revealTime - titleEndT) / 0.18);
+  if (titleDivAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha *= titleDivAlpha;
+    handLine(ctx, cardX + 32, cardY + 50, cardX + cardW - 32, cardY + 50, {
+      seed: 9121,
+      jitter: 1.0,
+      samples: 24,
+      stroke: accentStroke,
+      strokeWidth: 0.7,
+      opacity: 0.7,
+    });
+    ctx.restore();
+  }
+
+  // ── Body — animated bone-cream italic serif ─────────────────────
+  const bodyStartT = titleEndT + NOTE_SECTION_PAUSE;
+  const bodyFontSize = 17;
+  const bodyFontStr = `italic 500 ${bodyFontSize}px ${CHARCOAL_FONTS.serif}`;
   const bodyPadX = 30;
   const bodyX = cardX + bodyPadX;
   const bodyW = cardW - bodyPadX * 2;
-  wrapTextBlock(ctx, body, bodyX, cardY + 70, bodyW, 24);
+  const bodyY = cardY + 76;
+  drawAnimatedTextWrapped(ctx, {
+    text: body,
+    x: bodyX,
+    y: bodyY,
+    maxW: bodyW,
+    lineH: 24,
+    fontSize: bodyFontSize,
+    fontStr: bodyFontStr,
+    color: CHARCOAL.ink,
+    revealStart: bodyStartT,
+    cadence: NOTE_BODY_CHAR_CADENCE,
+    revealTime,
+    isImportantWord,
+  });
 
-  // Footer hint.
-  ctx.fillStyle = 'rgba(60, 40, 16, 0.6)';
-  ctx.font = `500 10px ${UI_FONTS.ui}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  drawSmallCapsCentered(
-    ctx,
-    'Press space to continue',
-    cardX + cardW / 2,
-    cardY + cardH - 18,
-    1.4,
-  );
+  // ── CTA — animated mono small caps ──────────────────────────────
+  if (cta) {
+    const bodyEndT = bodyStartT + body.length * NOTE_BODY_CHAR_CADENCE + NOTE_CHAR_REVEAL_DURATION;
+    const ctaStartT = bodyEndT + NOTE_SECTION_PAUSE;
+    const ctaY = cardY + cardH - 56;
+    // CTA divider fades in just before the CTA chars start landing.
+    const ctaDivAlpha = clamp01((revealTime - ctaStartT + 0.05) / 0.18);
+    if (ctaDivAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha *= ctaDivAlpha;
+      handLine(ctx, cardX + 60, ctaY - 10, cardX + cardW - 60, ctaY - 10, {
+        seed: 9125,
+        jitter: 0.8,
+        samples: 22,
+        stroke: accentStroke,
+        strokeWidth: 0.6,
+        opacity: 0.55,
+      });
+      ctx.restore();
+    }
+    const ctaStr = cta.toUpperCase();
+    drawAnimatedTextLineCentered(ctx, {
+      text: ctaStr,
+      centerX: cardX + cardW / 2,
+      y: ctaY + 4,
+      fontSize: 11,
+      fontStr: `700 11px ${CHARCOAL_FONTS.mono}`,
+      letterSpacing: 3,
+      color: accentInk,
+      revealStart: ctaStartT,
+      cadence: NOTE_CTA_CHAR_CADENCE,
+      revealTime,
+      isImportantWord,
+    });
+  }
 
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
+  // Footer hint — static, but only fades in once the typewriter
+  // is fully done so it doesn't compete for attention mid-reveal.
+  const totalDur = noteCardRevealDuration(note);
+  const footerAlpha = clamp01((revealTime - totalDur + 0.1) / 0.25);
+  if (footerAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha *= footerAlpha;
+    if (note.prompt) {
+      // Two-prompt footer: confirm on the left in accent ink, decline
+      // on the right in dim ink. Same y-line as the standard hint.
+      const footerY = cardY + cardH - 22;
+      const confirmStr =
+        `[SPACE] ${note.prompt.confirmLabel.toUpperCase()}`;
+      const cancelStr =
+        `[ESC] ${note.prompt.cancelLabel.toUpperCase()}`;
+      handText(ctx, confirmStr, cardX + cardW / 2 - 14, footerY, {
+        seed: 9130,
+        jitter: 0.2,
+        fontSize: 10,
+        font: CHARCOAL_FONTS.mono,
+        fill: accentInk,
+        weight: 700,
+        letterSpacing: 2.4,
+        align: 'right',
+      });
+      handText(ctx, cancelStr, cardX + cardW / 2 + 14, footerY, {
+        seed: 9131,
+        jitter: 0.2,
+        fontSize: 10,
+        font: CHARCOAL_FONTS.mono,
+        fill: CHARCOAL.inkDim,
+        weight: 600,
+        letterSpacing: 2.4,
+        align: 'left',
+      });
+      // Thin separator pip between the two options.
+      handText(ctx, '·', cardX + cardW / 2, footerY, {
+        seed: 9132,
+        jitter: 0,
+        fontSize: 12,
+        font: CHARCOAL_FONTS.mono,
+        fill: CHARCOAL.inkDim,
+        weight: 600,
+        letterSpacing: 0,
+        align: 'center',
+      });
+    } else {
+      handText(ctx, 'PRESS SPACE TO CONTINUE', cardX + cardW / 2, cardY + cardH - 22, {
+        seed: 9130,
+        jitter: 0.2,
+        fontSize: 10,
+        font: CHARCOAL_FONTS.mono,
+        fill: CHARCOAL.inkDim,
+        weight: 600,
+        letterSpacing: 3,
+        align: 'center',
+      });
+    }
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
-function wrapTextBlock(
+// ── Animated text helpers ────────────────────────────────────────────
+
+interface AnimatedLineOpts {
+  text: string;
+  centerX: number;
+  y: number;
+  fontSize: number;
+  fontStr: string;
+  letterSpacing: number;
+  color: string;
+  revealStart: number;
+  cadence: number;
+  revealTime: number;
+  isImportantWord: (word: string) => boolean;
+}
+
+/** Single-line, centered. Used for the title + the CTA. */
+function drawAnimatedTextLineCentered(
   ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxW: number,
-  lineH: number,
+  o: AnimatedLineOpts,
 ) {
-  const words = text.split(/\s+/);
-  let line = '';
-  let cy = y;
-  for (const word of words) {
-    const test = line ? line + ' ' + word : word;
-    if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, x, cy);
-      line = word;
-      cy += lineH;
-    } else {
-      line = test;
+  ctx.save();
+  ctx.font = o.fontStr;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  // Measure each char's advance + letter spacing to get per-char x positions.
+  const advances: number[] = [];
+  let totalW = 0;
+  for (let i = 0; i < o.text.length; i++) {
+    const w = ctx.measureText(o.text[i]).width;
+    advances.push(w);
+    totalW += w + (i < o.text.length - 1 ? o.letterSpacing : 0);
+  }
+  // Per-char "is this char part of an important word?" flag, computed
+  // once via a single tokenizer pass over the text.
+  const charImportant = new Array<boolean>(o.text.length).fill(false);
+  let ws = 0;
+  for (let i = 0; i <= o.text.length; i++) {
+    if (i === o.text.length || /\s/.test(o.text[i])) {
+      const word = o.text.slice(ws, i);
+      const imp = word.length > 0 && o.isImportantWord(word);
+      if (imp) for (let j = ws; j < i; j++) charImportant[j] = true;
+      ws = i + 1;
     }
   }
-  if (line) ctx.fillText(line, x, cy);
+
+  let xCursor = o.centerX - totalW / 2;
+  for (let i = 0; i < o.text.length; i++) {
+    const ch = o.text[i];
+    const advance = advances[i];
+    const charRevealStart = o.revealStart + i * o.cadence;
+    drawAnimatedChar(
+      ctx,
+      ch,
+      xCursor,
+      o.y,
+      i,
+      charRevealStart,
+      o.revealTime,
+      charImportant[i],
+      o.color,
+    );
+    xCursor += advance + o.letterSpacing;
+  }
+  ctx.restore();
+}
+
+interface AnimatedWrappedOpts {
+  text: string;
+  x: number;
+  y: number;
+  maxW: number;
+  lineH: number;
+  fontSize: number;
+  fontStr: string;
+  color: string;
+  revealStart: number;
+  cadence: number;
+  revealTime: number;
+  isImportantWord: (word: string) => boolean;
+}
+
+/** Multi-line wrapped body. Lays out word-by-word, then animates char-
+ *  by-char. Each char gets a global index so the reveal cadence flows
+ *  smoothly across line breaks. */
+function drawAnimatedTextWrapped(
+  ctx: CanvasRenderingContext2D,
+  o: AnimatedWrappedOpts,
+) {
+  ctx.save();
+  ctx.font = o.fontStr;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+
+  // Build a list of laid-out chars: { ch, x, y, globalIdx, important }.
+  const words = o.text.split(/(\s+)/); // keep whitespace tokens
+  type LaidChar = {
+    ch: string;
+    x: number;
+    y: number;
+    globalIdx: number;
+    important: boolean;
+  };
+  const laidChars: LaidChar[] = [];
+  let lineX = o.x;
+  let lineY = o.y;
+  let globalIdx = 0;
+  for (const word of words) {
+    if (/^\s+$/.test(word)) {
+      // Whitespace: account for it in layout but no glyphs to draw.
+      const wsW = ctx.measureText(word).width;
+      lineX += wsW;
+      globalIdx += word.length;
+      continue;
+    }
+    const wordW = ctx.measureText(word).width;
+    if (lineX + wordW > o.x + o.maxW && lineX > o.x) {
+      lineX = o.x;
+      lineY += o.lineH;
+    }
+    const important = o.isImportantWord(word);
+    for (const ch of word) {
+      const chW = ctx.measureText(ch).width;
+      laidChars.push({
+        ch,
+        x: lineX,
+        y: lineY,
+        globalIdx,
+        important,
+      });
+      lineX += chW;
+      globalIdx += 1;
+    }
+  }
+
+  for (const lc of laidChars) {
+    const charRevealStart = o.revealStart + lc.globalIdx * o.cadence;
+    drawAnimatedChar(
+      ctx,
+      lc.ch,
+      lc.x,
+      lc.y,
+      lc.globalIdx,
+      charRevealStart,
+      o.revealTime,
+      lc.important,
+      o.color,
+    );
+  }
+  ctx.restore();
+}
+
+/**
+ * Animate a single character: scale 2.0 → 1.0, alpha 0 → 1, y-offset
+ * −10 → 0 over `NOTE_CHAR_REVEAL_DURATION` seconds. After landing,
+ * `isImportant` chars get a tiny sinusoidal jitter forever; others
+ * are static.
+ *
+ * The font on the context must already be set by the caller (we don't
+ * re-set it on every char to avoid the cost). Color is set per call.
+ *
+ * Caller is expected to be inside an outer `ctx.save()/restore()`.
+ */
+function drawAnimatedChar(
+  ctx: CanvasRenderingContext2D,
+  ch: string,
+  baseX: number,
+  baseY: number,
+  charIdx: number,
+  revealStart: number,
+  revealTime: number,
+  isImportant: boolean,
+  color: string,
+) {
+  const localT = revealTime - revealStart;
+  if (localT <= 0) return;
+
+  let scale = 1;
+  let alpha = 1;
+  let dx = 0;
+  let dy = 0;
+
+  if (localT < NOTE_CHAR_REVEAL_DURATION) {
+    const u = localT / NOTE_CHAR_REVEAL_DURATION;
+    // Ease-out (1 - (1-u)^2) — letter "lands" decisively at the end.
+    const eased = 1 - (1 - u) * (1 - u);
+    scale = 2.0 - 1.0 * eased;
+    alpha = Math.min(1, eased * 1.5);
+    dy = -10 * (1 - eased);
+  } else if (isImportant) {
+    // Post-landing shake. Two sin curves at slightly mismatched
+    // frequencies so neighbouring chars don't synchronise.
+    const phase = revealTime * 14 + charIdx * 1.3;
+    dx = Math.sin(phase) * 0.7;
+    dy = Math.cos(phase * 0.78 + 0.4) * 0.55;
+  }
+
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = color;
+  // Translate to baseline, scale around that point, draw at origin.
+  ctx.translate(baseX + dx, baseY + dy);
+  if (scale !== 1) ctx.scale(scale, scale);
+  ctx.fillText(ch, 0, 0);
+  ctx.restore();
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 export function drawDawnBanner(
@@ -1923,43 +3410,76 @@ export function drawDawnBanner(
   const outT = Math.max(0, Math.min(1, clamped / 0.25));
   const alpha = Math.min(inT, outT);
   ctx.save();
+  ctx.globalAlpha *= alpha;
 
-  // Warm sunrise vignette — gold glow radiating from the bottom-centre like
-  // the sun cresting the horizon.
-  const vg = ctx.createRadialGradient(
-    w / 2, h * 0.9,
-    Math.min(w, h) * 0.05,
-    w / 2, h * 0.4,
-    Math.max(w, h) * 0.7,
-  );
-  vg.addColorStop(0, `rgba(255, 224, 130, ${0.35 * alpha})`);
-  vg.addColorStop(0.45, `rgba(255, 154, 85, ${0.18 * alpha})`);
+  // Warm ember vignette — sunrise behind a black sky.
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, w, h);
+  const vg = ctx.createRadialGradient(w / 2, h * 0.9, 40, w / 2, h * 0.4, Math.max(w, h) * 0.7);
+  vg.addColorStop(0, 'rgba(214, 138, 58, 0.32)');
+  vg.addColorStop(0.45, 'rgba(199, 154, 58, 0.16)');
   vg.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
 
-  // Sub-headline smallcaps.
-  ctx.fillStyle = `rgba(255, 224, 130, ${alpha})`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.font = `600 10px ${UI_FONTS.ui}`;
-  drawSmallCapsCentered(ctx, `You held night ${night}`, w / 2, 36, 1.6);
+  // "— YOU HELD NIGHT NN —" preamble in ember.
+  handText(ctx, `\u2014 YOU HELD NIGHT ${String(night).padStart(2, '0')} \u2014`, w / 2, 154, {
+    seed: 8540,
+    jitter: 0.4,
+    fontSize: 12,
+    font: CHARCOAL_FONTS.mono,
+    fill: CHARCOAL.ember,
+    weight: 700,
+    letterSpacing: 6,
+    align: 'center',
+  });
+  handLine(ctx, w / 2 - 110, 164, w / 2 + 110, 164, {
+    seed: 8541,
+    jitter: 1.2,
+    samples: 20,
+    stroke: CHARCOAL.ember,
+    strokeWidth: 0.8,
+  });
 
-  // Headline.
-  ctx.fillStyle = `rgba(255, 244, 210, ${alpha})`;
-  ctx.shadowColor = `rgba(255, 180, 100, ${0.85 * alpha})`;
-  ctx.shadowBlur = 28;
-  ctx.font = `italic 700 58px ${UI_FONTS.serif}`;
-  ctx.fillText('Dawn', w / 2, 54);
-  ctx.shadowBlur = 0;
+  // Big "DAWN" headline.
+  handText(ctx, 'DAWN', w / 2, 232, {
+    seed: 8550,
+    jitter: 1.4,
+    fontSize: 88,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    weight: 700,
+    italic: true,
+    letterSpacing: 10,
+    align: 'center',
+  });
+  handLine(ctx, w / 2 - 200, 254, w / 2 + 200, 254, {
+    seed: 8551,
+    jitter: 2.4,
+    samples: 32,
+    stroke: CHARCOAL.ember,
+    strokeWidth: 1.6,
+  });
+  handLine(ctx, w / 2 - 180, 260, w / 2 + 180, 260, {
+    seed: 8552,
+    jitter: 1.8,
+    samples: 28,
+    stroke: '#8a5a18',
+    strokeWidth: 1,
+    opacity: 0.7,
+  });
 
-  // Tagline smallcaps.
-  ctx.fillStyle = `rgba(255, 200, 140, ${alpha})`;
-  ctx.font = `600 10px ${UI_FONTS.ui}`;
-  drawSmallCapsCentered(ctx, 'The sun clears the ridge', w / 2, 122, 1.6);
+  handText(ctx, 'The sun clears the ridge.', w / 2, 298, {
+    seed: 8560,
+    jitter: 0.5,
+    fontSize: 18,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    italic: true,
+    align: 'center',
+    opacity: 0.85,
+  });
 
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
 
@@ -2159,107 +3679,320 @@ function computeDarkness(clock: Clock): number {
   }
 }
 
+export interface MenuScreenRects {
+  startBtn: { x: number; y: number; w: number; h: number };
+  leaderboardBtn: { x: number; y: number; w: number; h: number };
+  codexBtn: { x: number; y: number; w: number; h: number };
+  achievementsBtn: { x: number; y: number; w: number; h: number };
+}
+
+export interface MenuScreenStats {
+  /** Codex "unlocked / total" — shown next to the Codex button. */
+  codexUnlocked: number;
+  codexTotal: number;
+  /** Achievements "unlocked / total" — shown next to the Achievements button. */
+  achievementsUnlocked: number;
+  achievementsTotal: number;
+}
+
 export function drawMenuScreen(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   seedLabel?: string,
-) {
+  stats?: MenuScreenStats,
+  mouseX = -1,
+  mouseY = -1,
+): MenuScreenRects {
   ctx.save();
 
-  // Night backdrop with a warm campfire halo at centre.
-  const back = ctx.createRadialGradient(w / 2, h * 0.58, 10, w / 2, h * 0.5, Math.max(w, h) * 0.75);
-  back.addColorStop(0, '#241825');
-  back.addColorStop(0.45, '#12121e');
-  back.addColorStop(1, '#05060c');
+  // Charcoal night backdrop with a dried-blood vignette behind the title.
+  ctx.fillStyle = CHARCOAL.bg;
+  ctx.fillRect(0, 0, w, h);
+  const back = ctx.createRadialGradient(w / 2, h * 0.55, 30, w / 2, h * 0.55, Math.max(w, h) * 0.8);
+  back.addColorStop(0, 'rgba(122, 15, 15, 0.18)');
+  back.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = back;
   ctx.fillRect(0, 0, w, h);
 
-  const glow = ctx.createRadialGradient(w / 2, h * 0.58, 0, w / 2, h * 0.58, 140);
-  glow.addColorStop(0, 'rgba(255, 180, 90, 0.25)');
-  glow.addColorStop(1, 'rgba(255, 140, 40, 0)');
+  // Campfire halo — single warm ember disc above the horizon.
+  const glow = ctx.createRadialGradient(w / 2, h * 0.62, 0, w / 2, h * 0.62, 220);
+  glow.addColorStop(0, 'rgba(214, 138, 58, 0.16)');
+  glow.addColorStop(0.4, 'rgba(214, 138, 58, 0.05)');
+  glow.addColorStop(1, 'rgba(214, 138, 58, 0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, w, h);
 
-  // Silhouette horizon to echo the end screen.
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.95)';
+  // Faint hatch wash across the whole screen for the field-journal feel.
+  crossHatch(ctx, 0, 0, w, h, {
+    seed: 9801,
+    spacing: 28,
+    angle: 22,
+    jitter: 1.4,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 0.3,
+    opacity: 0.04,
+    double: true,
+  });
+
+  // Scattered red ink specks across the top — like the night banner.
+  inkSplatter(ctx, w / 2, 30, {
+    seed: 9810,
+    count: 16,
+    spread: w * 0.45,
+    color: CHARCOAL.accent2,
+    opacity: 0.25,
+    sizeMin: 0.6,
+    sizeMax: 2.4,
+  });
+
+  // Two-layer silhouette horizon, far mountains + near hills, matching the
+  // handoff SVG paths (scaled from 960 to current width).
+  const hBase = h;
+  const farPeaks: [number, number][] = [
+    [0, hBase - 90], [0.0625, hBase - 110], [0.125, hBase - 80],
+    [0.2083, hBase - 130], [0.2917, hBase - 95], [0.375, hBase - 135],
+    [0.4583, hBase - 100], [0.5417, hBase - 125], [0.625, hBase - 90],
+    [0.7083, hBase - 120], [0.7917, hBase - 80], [0.875, hBase - 115],
+    [0.9583, hBase - 85], [1, hBase - 105],
+  ];
+  ctx.fillStyle = 'rgba(6, 7, 14, 0.95)';
   ctx.beginPath();
   ctx.moveTo(0, h);
-  ctx.lineTo(0, h - 100);
-  const peaks = [
-    [0.12, 0.85], [0.22, 0.72], [0.33, 0.8], [0.45, 0.66], [0.55, 0.72],
-    [0.66, 0.58], [0.76, 0.7], [0.86, 0.6], [0.95, 0.72], [1, 0.82],
+  for (const [fx, fy] of farPeaks) ctx.lineTo(fx * w, fy);
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fill();
+  const nearPeaks: [number, number][] = [
+    [0, hBase - 50], [0.0833, hBase - 65], [0.1667, hBase - 42],
+    [0.25, hBase - 70], [0.3542, hBase - 50], [0.4375, hBase - 75],
+    [0.5417, hBase - 52], [0.6458, hBase - 72], [0.75, hBase - 48],
+    [0.854, hBase - 68], [0.9375, hBase - 48], [1, hBase - 62],
   ];
-  for (const [fx, fy] of peaks) ctx.lineTo(fx * w, h - 100 + fy * 80);
+  ctx.fillStyle = 'rgba(6, 7, 14, 0.98)';
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (const [fx, fy] of nearPeaks) ctx.lineTo(fx * w, fy);
   ctx.lineTo(w, h);
   ctx.closePath();
   ctx.fill();
 
+  // Tiny fire ember dot at centre of the halo.
+  ctx.save();
+  ctx.fillStyle = '#ff9a55';
+  ctx.shadowColor = 'rgba(255, 154, 85, 0.7)';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(w / 2, h * 0.62, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   ctx.textAlign = 'center';
 
-  // Sub-headline smallcaps.
-  ctx.fillStyle = UI_COLORS.orange;
-  ctx.textBaseline = 'top';
-  ctx.font = `600 11px ${UI_FONTS.ui}`;
-  drawSmallCapsCentered(ctx, 'A chronicle in ten nights', w / 2, 78, 1.8);
+  // Eyebrow above the title — dried-blood mono, wide tracking.
+  handText(ctx, '\u2014 HOLD THE FIRE UNTIL DAWN \u2014', w / 2, 90, {
+    seed: 9820,
+    jitter: 0.3,
+    fontSize: 12,
+    font: CHARCOAL_FONTS.mono,
+    fill: CHARCOAL.bloodInk,
+    weight: 700,
+    letterSpacing: 5,
+    align: 'center',
+  });
+  // Decorative rule under eyebrow.
+  handLine(ctx, w / 2 - 110, 102, w / 2 + 110, 102, {
+    seed: 9821,
+    jitter: 1,
+    samples: 18,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 0.7,
+    opacity: 0.7,
+  });
 
-  // Title — huge italic serif.
-  ctx.fillStyle = '#ffe082';
-  ctx.font = `italic 700 72px ${UI_FONTS.serif}`;
-  ctx.shadowColor = 'rgba(255, 154, 85, 0.5)';
-  ctx.shadowBlur = 30;
-  ctx.fillText('99 Kingdoms', w / 2, 96);
-  ctx.shadowBlur = 0;
+  // Title — hand-drawn italic serif in bone, just like the night banner.
+  handText(ctx, 'WHAT THE DARK KNOWS', w / 2, 174, {
+    seed: 9830,
+    jitter: 1.2,
+    fontSize: 56,
+    font: CHARCOAL_FONTS.serif,
+    fill: CHARCOAL.ink,
+    weight: 700,
+    italic: true,
+    letterSpacing: 4,
+    align: 'center',
+  });
+  handLine(ctx, w / 2 - 200, 192, w / 2 + 200, 192, {
+    seed: 9831,
+    jitter: 2.4,
+    samples: 32,
+    stroke: CHARCOAL.accent,
+    strokeWidth: 1.4,
+    opacity: 0.85,
+  });
 
-  // Intro paragraph.
-  const intro = [
-    'The portals opened at the equinox, and with them the children began to vanish.',
-    'Keep the campfire burning, raise a base, and hold back the night.',
-    'Survive ten nights — find out where they have gone.',
+  // "Press [Space] to begin" — small-caps with an inline keycap. Centred
+  // as a group.
+  const promptY = 224;
+  const promptFont = `600 13px ${UI_FONTS.ui}`;
+  ctx.font = promptFont;
+  ctx.fillStyle = 'rgba(234,223,196,0.75)';
+  const c = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+  const prevLS = c.letterSpacing;
+  c.letterSpacing = '0.32em';
+  const prefix = 'PRESS';
+  const suffix = 'TO BEGIN';
+  const prefixW = ctx.measureText(prefix).width;
+  const suffixW = ctx.measureText(suffix).width;
+  // Measure the keycap width using a dummy draw:
+  ctx.font = `500 11px ${UI_FONTS.mono}`;
+  const kbdLabel = 'Space';
+  const kbdTextW = ctx.measureText(kbdLabel).width;
+  const kbdW = Math.max(18, Math.ceil(kbdTextW) + 12);
+  const gap = 9;
+  const groupW = prefixW + gap + kbdW + gap + suffixW;
+  let gx = (w - groupW) / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = promptFont;
+  c.letterSpacing = '0.32em';
+  ctx.fillText(prefix, gx, promptY);
+  gx += prefixW + gap;
+  c.letterSpacing = '0px';
+  gx = drawKbdDark(ctx, gx, promptY, kbdLabel);
+  gx += gap;
+  ctx.font = promptFont;
+  c.letterSpacing = '0.32em';
+  ctx.fillText(suffix, gx, promptY);
+  c.letterSpacing = prevLS ?? '0px';
+
+  // Sub-buttons row: Leaderboard / Codex / Achievements.
+  // Each button auto-sizes to its label so italic-serif glyphs + handText
+  // jitter (which both extend past `measureText`'s advance width) never
+  // bleed out of the frame.
+  const subBtnY = 288;
+  const subBtnH = 60;
+  const subBtnGap = 12;
+  const subBtnPadX = 22;
+  const subBtnMinW = 132;
+  const subBtns: Array<{ label: string; sub?: string }> = [
+    { label: 'Leaderboard' },
+    {
+      label: 'Codex',
+      sub: stats ? `${stats.codexUnlocked} / ${stats.codexTotal}` : undefined,
+    },
+    {
+      label: 'Achievements',
+      sub: stats
+        ? `${stats.achievementsUnlocked} / ${stats.achievementsTotal}`
+        : undefined,
+    },
   ];
-  ctx.fillStyle = UI_COLORS.creamDim;
-  ctx.font = `italic 500 15px ${UI_FONTS.serif}`;
-  let introY = 200;
-  for (const line of intro) {
-    ctx.fillText(line, w / 2, introY);
-    introY += 22;
+  // Measure label widths under their actual rendering font, then add
+  // generous slack for italic slope + handText jitter that measureText
+  // doesn't see.
+  ctx.save();
+  ctx.font = `italic 700 18px ${CHARCOAL_FONTS.serif}`;
+  const subBtnWidths = subBtns.map((b) => {
+    const measured = ctx.measureText(b.label).width;
+    return Math.max(subBtnMinW, Math.ceil(measured + subBtnPadX * 2 + 14));
+  });
+  ctx.restore();
+  const totalSubW =
+    subBtnWidths.reduce((a, b) => a + b, 0) + subBtnGap * (subBtns.length - 1);
+  const subLeft = (w - totalSubW) / 2;
+  const subRects: Array<{ x: number; y: number; w: number; h: number }> = [];
+  let sxRunning = subLeft;
+  for (let i = 0; i < subBtns.length; i++) {
+    const subBtnW = subBtnWidths[i];
+    const sx = sxRunning;
+    sxRunning += subBtnW + subBtnGap;
+    const sr = { x: sx, y: subBtnY, w: subBtnW, h: subBtnH };
+    const hover =
+      mouseX >= sr.x && mouseX <= sr.x + sr.w && mouseY >= sr.y && mouseY <= sr.y + sr.h;
+    // Charcoal panel body.
+    ctx.fillStyle = hover ? 'rgba(214,138,58,0.10)' : 'transparent';
+    ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
+    handRect(ctx, sr.x, sr.y, sr.w, sr.h, {
+      seed: 9840 + i * 17,
+      jitter: 1,
+      samplesPerSide: 14,
+      stroke: hover ? CHARCOAL.ember : CHARCOAL.ink,
+      strokeWidth: hover ? 1.4 : 1,
+      passes: hover ? 2 : 1,
+      opacity: hover ? 1 : 0.75,
+    });
+    // Dried-blood spine drip on the left edge — same signature as panels.
+    handLine(ctx, sr.x + 3, sr.y + 6, sr.x + 3, sr.y + sr.h - 6, {
+      seed: 9850 + i,
+      jitter: 0.7,
+      samples: 12,
+      stroke: CHARCOAL.accent,
+      strokeWidth: 1.4,
+      opacity: hover ? 0.85 : 0.55,
+    });
+
+    const item = subBtns[i];
+    // Italic serif label \u2014 center-aligned so longer labels look intentional
+    // rather than crammed against the spine drip.
+    handText(ctx, item.label, sr.x + sr.w / 2, sr.y + 30, {
+      seed: 9860 + i * 11,
+      jitter: 0.4,
+      fontSize: 18,
+      font: CHARCOAL_FONTS.serif,
+      fill: CHARCOAL.ink,
+      weight: 700,
+      italic: true,
+      align: 'center',
+    });
+    // Mono sub-line \u2014 same center alignment.
+    handText(ctx, item.sub ?? '\u2014', sr.x + sr.w / 2, sr.y + sr.h - 14, {
+      seed: 9870 + i * 11,
+      jitter: 0.2,
+      fontSize: 10,
+      font: CHARCOAL_FONTS.mono,
+      fill: CHARCOAL.ember,
+      weight: 600,
+      letterSpacing: 1,
+      align: 'center',
+    });
+
+    subRects.push(sr);
   }
 
-  // Controls hint.
-  ctx.fillStyle = UI_COLORS.inkDim;
-  ctx.font = `500 11px ${UI_FONTS.ui}`;
-  ctx.fillText(
-    'WASD move  ·  Space chop / pay / unlock  ·  Click or Shift to attack  ·  1/2/3 abilities',
-    w / 2,
-    introY + 20,
-  );
+  // Invisible "start" hit-box — the "Press Space to begin" row acts as the
+  // click target. Keeps the hit-test interface consistent with the old
+  // design where a visible Start button existed.
+  const startBtn = {
+    x: (w - 260) / 2,
+    y: promptY - 16,
+    w: 260,
+    h: 32,
+  };
 
-  // Start prompt.
-  const btnY = h - 140;
-  const btnW = 240;
-  const btnH = 46;
-  const btnX = (w - btnW) / 2;
-  ctx.fillStyle = 'rgba(12, 14, 22, 0.85)';
-  ctx.fillRect(btnX, btnY, btnW, btnH);
-  ctx.strokeStyle = UI_COLORS.gold;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1);
-  ctx.fillStyle = UI_COLORS.gold;
-  ctx.font = `italic 700 22px ${UI_FONTS.serif}`;
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Press Space to begin', w / 2, btnY + btnH / 2 + 1);
-
-  // Seed.
+  // Seed at the very bottom — small mono small-caps inscription.
   if (seedLabel) {
-    ctx.fillStyle = UI_COLORS.inkFaint;
-    ctx.font = `500 10px ${UI_FONTS.mono}`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(`SEED ${seedLabel.toUpperCase()}`, w / 2, h - 56);
+    handText(ctx, `SEED ${seedLabel}`, w / 2, h - 28, {
+      seed: 9880,
+      jitter: 0.2,
+      fontSize: 9,
+      font: CHARCOAL_FONTS.mono,
+      fill: CHARCOAL.inkFaint,
+      letterSpacing: 3,
+      align: 'center',
+    });
   }
 
   ctx.textAlign = 'start';
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
+
+  return {
+    startBtn,
+    leaderboardBtn: subRects[0],
+    codexBtn: subRects[1],
+    achievementsBtn: subRects[2],
+  };
 }
 
 export function drawEndScreen(
@@ -2273,169 +4006,184 @@ export function drawEndScreen(
 ) {
   ctx.save();
 
-  // Scenic backdrop.
-  const backGrad = ctx.createRadialGradient(w / 2, victory ? h * 0.9 : h * 0.55, 0, w / 2, h / 2, Math.max(w, h));
-  if (victory) {
-    backGrad.addColorStop(0, '#ff9a55');
-    backGrad.addColorStop(0.25, '#8b3a12');
-    backGrad.addColorStop(0.7, '#1c1420');
-    backGrad.addColorStop(1, '#0a0b14');
-  } else {
-    backGrad.addColorStop(0, '#2a1418');
-    backGrad.addColorStop(0.7, '#0a0811');
-    backGrad.addColorStop(1, '#05060c');
-  }
-  ctx.fillStyle = backGrad;
+  // Heavy black backdrop with a faint colored vignette under the title.
+  ctx.fillStyle = CHARCOAL.bg;
+  ctx.fillRect(0, 0, w, h);
+  const titleColor = victory ? CHARCOAL.ember : CHARCOAL.accent;
+  const vg = ctx.createRadialGradient(w / 2, h * 0.5, 30, w / 2, h * 0.5, Math.max(w, h) * 0.7);
+  vg.addColorStop(0, victory ? 'rgba(214, 138, 58, 0.18)' : 'rgba(122, 15, 15, 0.22)');
+  vg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
 
-  // Silhouette horizon.
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.95)';
-  ctx.beginPath();
-  ctx.moveTo(0, h);
-  ctx.lineTo(0, h - 120);
-  const peaks = [
-    [0.1, 0.85], [0.18, 0.72], [0.28, 0.78], [0.38, 0.64], [0.47, 0.7],
-    [0.57, 0.56], [0.67, 0.66], [0.77, 0.58], [0.87, 0.7], [0.95, 0.6], [1, 0.72],
-  ];
-  for (const [fx, fy] of peaks) {
-    ctx.lineTo(fx * w, h - 120 + fy * 90);
-  }
-  ctx.lineTo(w, h);
-  ctx.closePath();
-  ctx.fill();
-
-  // Sun / dead fire symbol.
-  const symY = h * 0.62;
-  if (victory) {
-    const r = 42;
-    const symGrad = ctx.createRadialGradient(w / 2, symY, 0, w / 2, symY, r);
-    symGrad.addColorStop(0, '#ffe082');
-    symGrad.addColorStop(0.4, '#f2c94c');
-    symGrad.addColorStop(0.75, '#ff9a55');
-    symGrad.addColorStop(1, 'rgba(255, 154, 85, 0)');
-    ctx.fillStyle = symGrad;
-    ctx.beginPath();
-    ctx.arc(w / 2, symY, r, 0, Math.PI * 2);
-    ctx.fill();
+  // Heavy splatter for defeat — the ground is wet.
+  if (!victory) {
+    inkSplatter(ctx, w / 2, h * 0.55, {
+      seed: 9201,
+      count: 60,
+      spread: w * 0.5,
+      color: CHARCOAL.accent2,
+      opacity: 0.25,
+      sizeMin: 1,
+      sizeMax: 6,
+    });
   } else {
-    ctx.fillStyle = '#3a2a20';
-    ctx.fillRect(w / 2 - 11, symY - 3, 22, 6);
-    ctx.fillStyle = '#1a0f0a';
-    ctx.fillRect(w / 2 - 11, symY - 7, 22, 3);
+    inkSplatter(ctx, w / 2, h * 0.4, {
+      seed: 9202,
+      count: 30,
+      spread: w * 0.35,
+      color: CHARCOAL.ember,
+      opacity: 0.18,
+      sizeMin: 0.6,
+      sizeMax: 3,
+    });
   }
 
-  ctx.textAlign = 'center';
-
-  // Sub-header smallcaps.
-  ctx.fillStyle = victory ? UI_COLORS.orange : UI_COLORS.purple;
-  ctx.textBaseline = 'top';
-  ctx.font = `600 10px ${UI_FONTS.ui}`;
-  drawSmallCapsCentered(
-    ctx,
-    victory ? 'You held 10 nights' : 'The last ember died',
-    w / 2,
-    80,
-    1.6,
-  );
-
-  // Big italic serif headline.
-  ctx.fillStyle = victory ? '#ffe082' : UI_COLORS.cream;
-  ctx.font = `italic 700 52px ${UI_FONTS.serif}`;
-  ctx.textBaseline = 'top';
-  ctx.shadowColor = victory ? 'rgba(255, 154, 85, 0.5)' : 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = victory ? 28 : 18;
-  ctx.fillText(
-    victory ? 'The sun rises again' : 'The fire went out',
-    w / 2,
-    102,
-  );
-  ctx.shadowBlur = 0;
-
-  // Stats block.
-  const statsBlockY = 180;
-  const statsBlockW = 520;
-  const statsBlockH = 84;
-  const statsX = (w - statsBlockW) / 2;
-  ctx.fillStyle = 'rgba(10, 11, 20, 0.7)';
-  ctx.fillRect(statsX, statsBlockY, statsBlockW, statsBlockH);
-  ctx.strokeStyle = UI_COLORS.stroke;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(statsX + 0.5, statsBlockY + 0.5, statsBlockW - 1, statsBlockH - 1);
-
-  const statEntries: Array<{ label: string; value: string; tint: string }> = [
-    { label: 'Enemies slain', value: String(stats.kills), tint: UI_COLORS.red },
-    { label: 'Villagers saved', value: String(stats.rescued), tint: UI_COLORS.cream },
-    { label: 'Stations built', value: String(stats.stationsBuilt), tint: UI_COLORS.gold },
-    { label: 'Coins spent', value: String(stats.coinsSpent), tint: UI_COLORS.gold },
-  ];
-  const colW = statsBlockW / statEntries.length;
-  statEntries.forEach((s, i) => {
-    const cx = statsX + colW * (i + 0.5);
-    ctx.fillStyle = s.tint;
-    ctx.font = `700 26px ${UI_FONTS.mono}`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(s.value, cx, statsBlockY + 16);
-    ctx.fillStyle = UI_COLORS.inkDim;
-    ctx.font = `600 8.5px ${UI_FONTS.ui}`;
-    drawSmallCapsCentered(ctx, s.label, cx, statsBlockY + 52, 1.4);
-    if (i < statEntries.length - 1) {
-      ctx.strokeStyle = UI_COLORS.stroke;
-      ctx.beginPath();
-      ctx.moveTo(statsX + colW * (i + 1), statsBlockY + 14);
-      ctx.lineTo(statsX + colW * (i + 1), statsBlockY + statsBlockH - 14);
-      ctx.stroke();
-    }
+  // Hatch wash for the field-journal mood.
+  crossHatch(ctx, 0, 0, w, h, {
+    seed: 9210,
+    spacing: 24,
+    angle: 22,
+    jitter: 1.4,
+    stroke: CHARCOAL.ink,
+    strokeWidth: 0.4,
+    opacity: 0.05,
+    double: true,
   });
+
+  // Preamble.
+  handText(ctx, '\u2014 RUN ENDED \u2014', w / 2, 84, {
+    seed: 9220,
+    jitter: 0.4,
+    fontSize: 13,
+    font: CHARCOAL_FONTS.mono,
+    fill: titleColor,
+    weight: 700,
+    letterSpacing: 7,
+    align: 'center',
+  });
+
+  // Big italic serif headline — DAWN for victory, ASHES for defeat.
+  handText(ctx, victory ? 'DAWN' : 'ASHES', w / 2, 168, {
+    seed: 9230,
+    jitter: 1.6,
+    fontSize: 86,
+    font: CHARCOAL_FONTS.serif,
+    fill: titleColor,
+    weight: 700,
+    italic: true,
+    letterSpacing: 12,
+    align: 'center',
+  });
+  handLine(ctx, w / 2 - 200, 188, w / 2 + 200, 188, {
+    seed: 9231,
+    jitter: 2.5,
+    samples: 36,
+    stroke: titleColor,
+    strokeWidth: 1.6,
+  });
+
+  // Subtitle.
+  handText(
+    ctx,
+    victory ? 'You held the line until first light.' : 'The fire went out before dawn.',
+    w / 2,
+    222,
+    {
+      seed: 9240,
+      jitter: 0.5,
+      fontSize: 18,
+      font: CHARCOAL_FONTS.serif,
+      fill: CHARCOAL.ink,
+      italic: true,
+      align: 'center',
+      opacity: 0.85,
+    },
+  );
+
+  // Stats list — left-aligned key, right-aligned value, dashed connector.
+  const statRows: Array<[string, string]> = [
+    ['NIGHTS SURVIVED', String(clock.night)],
+    ['VILLAGERS SAVED', String(stats.rescued)],
+    ['STATIONS BUILT', String(stats.stationsBuilt)],
+    ['COINS SPENT', String(stats.coinsSpent)],
+    ['ENEMIES SLAIN', String(stats.kills)],
+  ];
+  const statBlockW = 480;
+  const statX = w / 2 - statBlockW / 2;
+  const statTop = 274;
+  const statRowH = 26;
+  for (let i = 0; i < statRows.length; i++) {
+    const [k, v] = statRows[i];
+    const ry = statTop + i * statRowH;
+    handText(ctx, k, statX, ry, {
+      seed: 9300 + i * 2,
+      jitter: 0.3,
+      fontSize: 11,
+      font: CHARCOAL_FONTS.mono,
+      fill: CHARCOAL.ink,
+      weight: 600,
+      letterSpacing: 3,
+      opacity: 0.7,
+    });
+    handLine(ctx, statX + 180, ry - 4, statX + statBlockW - 80, ry - 4, {
+      seed: 9300 + i * 2 + 1,
+      jitter: 1,
+      samples: 20,
+      stroke: CHARCOAL.ink,
+      strokeWidth: 0.4,
+      opacity: 0.4,
+      dash: [2, 3],
+      charcoal: false,
+    });
+    handText(ctx, v, statX + statBlockW, ry, {
+      seed: 9320 + i,
+      jitter: 0.4,
+      fontSize: 16,
+      font: CHARCOAL_FONTS.serif,
+      fill: titleColor,
+      weight: 600,
+      align: 'right',
+    });
+  }
 
   // Seed line.
   if (seedLabel) {
-    ctx.fillStyle = UI_COLORS.inkFaint;
-    ctx.font = `500 9px ${UI_FONTS.mono}`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(`SEED ${seedLabel.toUpperCase()}`, w / 2, statsBlockY + statsBlockH + 16);
+    handText(ctx, `SEED ${seedLabel.toUpperCase()}`, w / 2, statTop + statRows.length * statRowH + 18, {
+      seed: 9340,
+      jitter: 0.2,
+      fontSize: 9,
+      font: CHARCOAL_FONTS.mono,
+      fill: CHARCOAL.inkFaint,
+      letterSpacing: 3,
+      align: 'center',
+    });
   }
 
-  // Survived-to line only on loss.
-  if (!victory) {
-    ctx.fillStyle = UI_COLORS.creamDim;
-    ctx.font = `italic 500 13px ${UI_FONTS.serif}`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(`You survived to night ${clock.night}`, w / 2, statsBlockY + statsBlockH + 38);
-  }
-
-  // Return-to-menu pill — Space, Enter, click or R all send the player back.
-  const btnY = statsBlockY + statsBlockH + 66;
-  const btnText = 'Press Space to return to menu';
-  ctx.font = `500 11px ${UI_FONTS.ui}`;
-  const btnW = ctx.measureText(btnText).width + 52;
-  const btnH = 30;
+  // Hand-drawn return button.
+  const btnW = 280;
+  const btnH = 40;
   const btnX = (w - btnW) / 2;
-  ctx.strokeStyle = 'rgba(234, 223, 196, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1);
-  ctx.fillStyle = UI_COLORS.cream;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(btnText, w / 2, btnY + btnH / 2);
+  const btnY = statTop + statRows.length * statRowH + 50;
+  handRect(ctx, btnX, btnY, btnW, btnH, {
+    seed: 9350,
+    jitter: 1.3,
+    samplesPerSide: 18,
+    stroke: titleColor,
+    strokeWidth: 1.4,
+    passes: 2,
+  });
+  handText(ctx, 'PRESS SPACE TO RETURN', w / 2, btnY + btnH / 2 + 5, {
+    seed: 9351,
+    jitter: 0.3,
+    fontSize: 12,
+    font: CHARCOAL_FONTS.mono,
+    fill: titleColor,
+    weight: 700,
+    letterSpacing: 4,
+    align: 'center',
+  });
 
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
 
-function drawSmallCapsCentered(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  cx: number,
-  y: number,
-  tracking = 1.2,
-) {
-  const upper = text.toUpperCase();
-  const c = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-  const prev = c.letterSpacing;
-  c.letterSpacing = `${tracking}px`;
-  const prevAlign = ctx.textAlign;
-  ctx.textAlign = 'center';
-  ctx.fillText(upper, cx, y);
-  ctx.textAlign = prevAlign;
-  c.letterSpacing = prev ?? '0px';
-}

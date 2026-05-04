@@ -26,6 +26,15 @@ export function armoredDamage(enemy: Enemy, damage: number): number {
   return Math.max(1, damage - armor);
 }
 
+/** Whether the enemy was born from a wild (always-on, patrolling) portal
+ *  or a siege (night-only, rush-the-fire) portal. Drives the AI in
+ *  `Game.updateEnemies`. */
+export type EnemyOrigin = 'wild' | 'siege';
+
+/** Wild-pack mode: lazy orbit around the home portal vs. active aggro on
+ *  the nearest hero/villager. Siege enemies always run as if `aggro`. */
+export type EnemyPatrolMode = 'patrol' | 'aggro';
+
 export interface Enemy {
   id: number;
   kind: EnemyKind;
@@ -35,11 +44,38 @@ export interface Enemy {
   maxHp: number;
   attackTimer: number;
   hitFlash: number;
+  /** Where this enemy came from; gates its AI branch. Defaults to siege
+   *  for backwards compatibility with anything that hand-spawned via
+   *  `createEnemy(kind, x, y)`. */
+  origin: EnemyOrigin;
+  /** For wild-origin enemies: the wild-portal id they patrol around.
+   *  Mutually exclusive with `homeX/Y` — portal-bound packs use this,
+   *  wandering wild packs from world-gen use the position fallback. */
+  homePortalId?: number;
+  /** Fallback patrol anchor for wild enemies that aren't tied to a
+   *  portal (the wandering wild packs). When `homePortalId` is set
+   *  AND that portal is alive, the portal position takes priority;
+   *  otherwise the AI orbits these coordinates. */
+  homeX?: number;
+  homeY?: number;
+  /** For wild-origin enemies: current behavior. */
+  patrolMode: EnemyPatrolMode;
+  /** Patrol orbit angle around the home portal — used as a deterministic
+   *  per-enemy phase so the pack doesn't bunch up at a single point. */
+  patrolPhase: number;
 }
 
 let nextId = 1;
 
-export function createEnemy(kind: EnemyKind, x: number, y: number): Enemy {
+export function createEnemy(
+  kind: EnemyKind,
+  x: number,
+  y: number,
+  origin: EnemyOrigin = 'siege',
+  homePortalId?: number,
+  homeX?: number,
+  homeY?: number,
+): Enemy {
   const s = ENEMY_STATS[kind];
   return {
     id: nextId++,
@@ -50,5 +86,11 @@ export function createEnemy(kind: EnemyKind, x: number, y: number): Enemy {
     maxHp: s.hp,
     attackTimer: 0,
     hitFlash: 0,
+    origin,
+    homePortalId,
+    homeX,
+    homeY,
+    patrolMode: origin === 'wild' ? 'patrol' : 'aggro',
+    patrolPhase: Math.random() * Math.PI * 2,
   };
 }
