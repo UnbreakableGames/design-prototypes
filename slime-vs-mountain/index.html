@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Bee Battles RNG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        height: 100%;
+        background: #0c1018;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter Tight', system-ui, sans-serif;
+        color: #b6c2d1;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+        touch-action: none;
+      }
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        max-width: 100vw;
+        max-height: 100vh;
+      }
+      /* Canvas keeps internal 960×540 resolution and CSS-scales to fit while
+         preserving aspect ratio. Works on phone landscape, tablet, desktop. */
+      #game {
+        display: block;
+        background: #11151f;
+        border: 1px solid #1f2533;
+        image-rendering: pixelated;
+        max-width: 100vw;
+        max-height: 100vh;
+        width: auto;
+        height: auto;
+        aspect-ratio: 960 / 540;
+        touch-action: none;
+      }
+      /* On narrow / tall portrait viewports prefer full width. */
+      @media (max-aspect-ratio: 960/540) {
+        #game { width: 100vw; height: auto; }
+      }
+      @media (min-aspect-ratio: 960/540) {
+        #game { height: 100vh; width: auto; }
+      }
+      .hud {
+        font-size: 12px;
+        opacity: 0.6;
+        letter-spacing: 0.5px;
+      }
+      /* Hide the prototype footer on small screens to maximize game area. */
+      @media (max-width: 600px) {
+        .hud { display: none; }
+        .wrap { gap: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <canvas id="game" width="960" height="540"></canvas>
+      <div class="hud">Bee Battles RNG &middot; prototype</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
